@@ -1,0 +1,11 @@
+[Unit]
+Description=NIGHTLOOP start-up settings (Wi-Fi, SD card size)
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/nightloop/firstboot.sh
+
+[Install]
+WantedBy=multi-user.target

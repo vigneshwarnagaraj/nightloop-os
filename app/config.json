@@ -1,0 +1,45 @@
+{
+  "port": 8080,
+  "home": {
+    "icao": "KORD",
+    "lat": 41.9786,
+    "lon": -87.9048
+  },
+  "sources": {
+    "ai": true,
+    "vatsim": true,
+    "ivao": true,
+    "real": false
+  },
+  "ivao_api_key": "",
+  "real_providers": {
+    "airplanes.live": true,
+    "adsb.lol": true,
+    "adsb.fi": true,
+    "freeflight": false
+  },
+  "freeflight_url": "http://localhost:8000",
+  "freeflight_autostart": false,
+  "ai_flights": 300,
+  "ai_home_share": 0.1,
+  "tower": {
+    "enabled": true,
+    "arr_rwy": "",
+    "dep_rwy": ""
+  },
+  "center": {
+    "enabled": true,
+    "radius": 200
+  },
+  "ground": {
+    "enabled": true
+  },
+  "positions": {
+    "ground": true,
+    "tower": true,
+    "approach": false,
+    "center": false
+  },
+  "lan": true,
+  "update_source": ""
+}

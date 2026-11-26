@@ -1,0 +1,13 @@
+[Unit]
+Description=NIGHTLOOP VNC (RealVNC Viewer -> nightloop.local)
+After=nightloop-kiosk.service
+PartOf=nightloop-kiosk.service
+
+[Service]
+User=nightloop
+ExecStart=/opt/nightloop/vnc.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=NIGHTLOOP
+Description=NIGHTLOOP boot screen
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/nightloop
+ScriptFile=/usr/share/plymouth/themes/nightloop/nightloop.script

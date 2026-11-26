@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NIGHTLOOP</title>
+<link rel="icon" href="favicon.png">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="boot"><img src="logo_full.svg" alt="NIGHTLOOP"><div class="bmsg">Starting the simulator...</div><div class="bdots"><i></i><i></i><i></i><i></i><i></i></div></div>
+
+<!-- left bar: settings + task windows -->
+<nav id="rail">
+  <img id="railLogo" src="logo_mark.svg" alt="NIGHTLOOP" title="NIGHTLOOP">
+  <button id="gear" class="rb" title="Settings">
+    <svg viewBox="0 0 24 24" class="fill"><path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.47.47 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+  </button>
+  <div class="sep"></div>
+  <div class="rlabel">TASKS</div>
+  <button class="rb task" data-kind="world" title="World radar (tracking only)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></svg></button>
+  <button class="rb task" data-kind="approach" title="Approach window"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6.5-6.5"/></svg></button>
+  <button class="rb task" data-kind="ground" title="Ground window (taxi)"><svg viewBox="0 0 24 24"><path d="M3 20h18M6 20V9l6-5 6 5v11"/><path d="M10 20v-5h4v5"/></svg></button>
+  <button class="rb task" data-kind="tower" title="Tower window"><svg viewBox="0 0 24 24"><path d="M8 21h8M12 21V10M7 10h10l-1.5-5h-7zM5 5h14M12 5V3"/></svg></button>
+  <button class="rb task" data-kind="center" title="Center window (enroute sector)"><svg viewBox="0 0 24 24"><path d="M4 7l5-3 6 3 5-3v13l-5 3-6-3-5 3z"/><path d="M9 4v13M15 7v13"/></svg></button>
+  <div class="grow"></div>
+  <button id="expand" class="rb" title="Open / close settings"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+</nav>
+
+<!-- top strip: search, layout, clock -->
+<div id="topbar">
+  <div id="searchBox">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+    <input id="search" placeholder="Search flights (callsign, type, from/to) or airports" autocomplete="off">
+    <kbd>Ctrl F</kbd>
+    <div id="results" hidden>
+      <div class="scopes"><button data-k="all" class="on">All</button><button data-k="flights">Flights</button><button data-k="airports">Airports</button></div>
+      <div id="resList"></div>
+    </div>
+  </div>
+  <div id="layouts" title="Number of windows">
+    <span>Windows</span>
+    <button data-n="1"><i class="lg l1"></i></button><button data-n="2"><i class="lg l2"></i></button>
+    <button data-n="3"><i class="lg l3"></i></button><button data-n="4"><i class="lg l4"></i></button>
+  </div>
+  <div id="positions" title="Positions you work. The others are handled by AI controllers.">
+    <span>You work</span>
+    <button data-p="ground" title="Ground: push back, taxi">GND</button><button data-p="tower" title="Tower: line up, takeoff, landing">TWR</button>
+    <button data-p="approach" title="Approach: vectors and ILS">APP</button><button data-p="center" title="Center: enroute, handoffs">CTR</button>
+  </div>
+  <div class="tgrow"></div>
+  <div id="sysbar" hidden>
+    <button id="sysWifi" title="Wi-Fi"><svg viewBox="0 0 24 24"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10.5 10.5 0 0 1 14 0M8.5 15.5a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1.3" class="fill"/></svg></button>
+    <button id="sysPower" title="Shut down or restart the Raspberry Pi"><svg viewBox="0 0 24 24"><path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0"/></svg></button>
+  </div>
+  <div id="clock" title="Clock - change it under Settings > General"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    <b id="lt">--:--:--</b><span id="ltz"></span><span id="utcPart" hidden><i class="csep"></i><b id="utc" class="sm">--:--:--</b><span>UTC</span></span></div>
+</div>
+
+<!-- the windows -->
+<div id="panes"></div>
+
+<!-- settings panel -->
+<aside id="panel">
+  <div class="hero">
+    <button id="panelClose" class="pclose" title="Close">&times;</button>
+    <img src="logo_full.svg" alt="NIGHTLOOP" class="heroLogo">
+    <div class="stats">
+      <div class="stat"><span>AI</span><b id="stAi">-</b></div>
+      <div class="stat"><span>VATSIM</span><b id="stVatsim">-</b></div>
+      <div class="stat"><span>IVAO</span><b id="stIvao">-</b></div>
+      <div class="stat"><span>REAL</span><b id="stReal">-</b></div>
+    </div>
+  </div>
+  <div class="tabs">
+    <button data-cat="general">General</button><button data-cat="map">Map</button><button data-cat="traffic">Traffic</button>
+    <button data-cat="ai">AI</button><button data-cat="display">Display</button><button data-cat="voice">Voice</button><button data-cat="updates">Updates</button><button data-cat="about">About</button>
+  </div>
+
+  <section data-cat="general" class="box"><h2>General</h2>
+    <label class="sel">Clock format <select data-opt="clock24"><option value="true">24-hour (23:05)</option><option value="false">12-hour (11:05 PM)</option></select></label>
+    <label class="sel">Time zone <select data-opt="tz" id="tzSel"><option value="system">System clock (this computer)</option></select></label>
+    <label><input type="checkbox" data-opt="showUtc"> Also show UTC next to the clock</label>
+    <label><input type="checkbox" data-opt="showSeconds"> Show seconds</label>
+    <div class="muted">All times in NIGHTLOOP (clock, comms log, departure and landing times) use this setting.</div>
+    <h3>Home airport</h3>
+    <div class="row"><input id="homeIcao" maxlength="8" placeholder="ICAO e.g. KORD"><button id="homeBtn">Set</button></div>
+    <div id="homeMsg" class="muted">Task windows (Approach, Tower) and the AI "to or from home" flights use this airport.</div>
+  </section>
+
+  <section data-cat="map" class="box"><h2>Map</h2>
+    <label class="sel">Style <select data-opt="style">
+      <optgroup label="Main">
+        <option value="darktest">Dark map test (NIGHTLOOP)</option>
+        <option value="street">Street map (OpenStreetMap)</option></optgroup>
+      <optgroup label="Other (to be removed unless you keep them)">
+        <option value="dark">Dark (Esri)</option><option value="satellite">Satellite (Esri)</option>
+        <option value="terrain">Terrain (OpenTopoMap)</option><option value="ofm-dark">OpenFreeMap Dark</option>
+        <option value="ofm-fiord">OpenFreeMap Fiord</option><option value="ofm-liberty">OpenFreeMap Liberty</option>
+        <option value="osm-dark">OpenStreetMap inverted dark</option></optgroup>
+    </select></label>
+    <label><input type="checkbox" data-opt="placeLabels"> Country and city names (Dark Esri only)</label>
+    <label class="sel">Coordinate grid <select data-opt="grid">
+      <option value="off">Off</option><option value="tl">Labels top and left</option><option value="all">Labels on all four sides</option></select></label>
+  </section>
+
+  <section data-cat="traffic" class="box"><h2>Traffic sources</h2>
+    <div id="feeds"></div>
+    <h3>Real-world providers</h3>
+    <div id="providers"></div>
+    <div id="provMsg" class="muted"></div>
+    <div class="row gap"><button id="refreshBtn">Refresh now</button>
+      <label class="sel inline">Screen update <select data-opt="rate">
+        <option value="500">0.5 s</option><option value="1000">1 s</option><option value="2000">2 s</option><option value="5000">5 s</option></select></label></div>
+    <div class="muted">The grey line under each source is its status: when it last updated, or an error in red.</div>
+  </section>
+
+  <section data-cat="ai" class="box"><h2>AI planes (worldwide)</h2>
+    <label class="sel">Number of flights <span class="row"><input id="aiCount" type="number" min="0" max="5000" step="10"><button id="aiBtn">Apply</button></span></label>
+    <label class="sel">Flights to or from home airport <span class="row"><input id="aiShare" type="number" min="0" max="100" step="5"><span>%</span></span></label>
+    <div class="muted">Out of all AI flights, this percentage departs from or lands at your home airport, so there is always traffic near you.</div>
+    <div class="row gap"><button id="aiPause">Pause AI planes</button><span id="aiState" class="muted"></span></div>
+    <div id="aiMsg" class="muted">Flights run on the real clock and keep flying while NIGHTLOOP is closed. Pause freezes them until you resume.</div>
+  </section>
+
+  <section data-cat="display" class="box"><h2>Display</h2>
+    <label><input type="checkbox" data-opt="labels"> Data blocks</label>
+    <label><input type="checkbox" data-opt="trails"> History trails</label>
+    <label><input type="checkbox" data-opt="vectors"> 1-minute speed vectors</label>
+    <label><input type="checkbox" data-opt="airports"> Airports</label>
+    <label><input type="checkbox" data-opt="runways"> Runways and runway names (zoom in)</label>
+    <label class="sel">Airport labels <select data-opt="apLabels">
+      <option value="off">Off</option><option value="code">Codes only</option><option value="full">Codes and full names</option></select></label>
+    <label><input type="checkbox" data-opt="statusbar"> Status bar (aircraft count, FPS)</label>
+    <label><input type="checkbox" data-opt="comms"> Comms window (radio log and command line)</label>
+    <label><input type="checkbox" data-opt="stca"> Conflict alerts for AI planes (less than 3 NM and 1,000 ft)</label>
+    <label><input type="checkbox" data-opt="gndDiagram"> Ground window: airport diagram (taxiways, aprons, buildings) instead of a map</label>
+    <label class="sel">Airport diagram colours <select data-opt="gndTheme"><option value="chart">Airport chart (light green)</option><option value="radar">Ground radar (dark)</option></select></label>
+    <label><input type="checkbox" data-opt="showAiComms"> Show radio calls of the AI controllers (grey)</label>
+    <div class="muted">Range rings and the recommended zone are shown only in the Approach and Tower windows.</div>
+  </section>
+
+  <section data-cat="voice" class="box"><h2>Voice</h2>
+    <label><input type="checkbox" data-opt="voiceIn"> Voice commands (push to talk)</label>
+    <label class="sel">Push-to-talk mode <select data-opt="pttMode"><option value="hold">Hold to talk (release to send)</option><option value="toggle">Press once, speak, it sends by itself</option></select></label>
+    <div class="crow"><span class="muted">Talk button:</span> <b id="pttName">`</b> <button id="pttLearn" title="Press this, then press any keyboard key, mouse side button or joystick button">Change...</button></div>
+    <label><input type="checkbox" data-opt="pttHeadset"> Headset / media button (play-pause) starts talking</label>
+    <label><input type="checkbox" data-opt="pttGamepad"> Joystick / gamepad button (set it with Change...)</label>
+    <div class="muted">Hold the key (or the microphone button in the comms window), speak, release. Example: "United 4527, turn left heading two seven zero, descend and maintain five thousand". The first time, the browser asks for microphone permission - allow it.</div>
+    <label class="sel">Speech engine <select data-opt="voiceEngine"><option value="auto">Automatic</option><option value="offline">Offline (built in, no internet)</option><option value="browser">Browser (Chrome / Edge, needs internet)</option></select></label>
+    <div class="muted" id="voiceEngineInfo"></div>
+    <div class="crow"><button id="voiceInstall" hidden>Install offline voice (40 MB download)</button></div>
+    <label><input type="checkbox" data-opt="voiceOut"> Speak pilot replies</label>
+    <label class="sel">Speech speed <select data-opt="voiceRate"><option value="0.9">Slow</option><option value="1.1">Normal</option><option value="1.3">Fast</option></select></label>
+    <div class="crow"><button id="voiceTest">Test pilot voice</button></div>
+  </section>
+
+  <section data-cat="updates" class="box"><h2>Updates</h2>
+    <div id="updVer" class="muted"></div>
+    <div id="updWin">
+      <h3>Install an update on this computer</h3>
+      <div class="muted">NIGHTLOOP copies newer program files from this folder (your NIGHTLOOP development folder). Your settings, AI flights and downloaded data stay.</div>
+      <label class="sel">Folder <input id="updFolder" placeholder="D:\ATC SIM\V1\web_prototype" style="width:190px"></label>
+      <div class="crow"><button class="primary" id="updLocal">Install update</button></div>
+      <div id="updLocalMsg" class="muted"></div>
+    </div>
+    <h3 id="peerTitle">Other NIGHTLOOP devices on your Wi-Fi</h3>
+    <div class="muted" id="peerHelp">Send this computer's version to your Raspberry Pi, or (on the Pi) get the newer version from your PC.</div>
+    <div class="crow"><button id="peerFind">Find devices</button></div>
+    <div id="peerList"></div>
+    <label class="sel">Or type the address <input id="peerAddr" placeholder="http://nightloop.local:8080" style="width:180px"></label>
+    <div class="crow"><button id="peerSend">Send my version to it</button><button id="peerPull">Get its version</button></div>
+    <div id="peerMsg" class="muted"></div>
+    <div id="updPi" hidden>
+      <h3>Raspberry Pi OS</h3>
+      <div class="crow"><button id="osUpd">Update Raspberry Pi OS</button></div>
+      <pre id="osLog" class="muted" style="white-space:pre-wrap;max-height:160px;overflow:auto"></pre>
+    </div>
+  </section>
+
+  <section data-cat="about" class="box"><h2>About</h2>
+    <img src="logo_badge.svg" alt="NIGHTLOOP" class="aboutLogo">
+    <div id="ver" class="muted"></div>
+    <div class="muted">Data: VATSIM, IVAO, airplanes.live, adsb.lol, adsb.fi, FreeFlight API (optional), adsbdb, OurAirports.<br>
+      Map tiles: OpenFreeMap / OpenMapTiles, OpenStreetMap, Esri, OpenTopoMap.</div>
+    <div class="muted">Ctrl+F: search. Click a window to make it active (pink frame). Each window can be popped out into its own browser window.</div>
+  </section>
+</aside>
+
+<!-- taxi route builder -->
+<div id="rbar" hidden><div class="rbh"><b id="rbTitle">TAXI ROUTE</b><span id="rbVia"></span></div>
+  <div class="rbi"><small id="rbInfo" class="muted"></small><span class="grow"></span>
+    <button id="rbUndo">Undo</button><button id="rbClear">Clear</button><button id="rbCancel">Cancel</button><button id="rbSend" class="primary">Send taxi</button></div></div>
+
+<div id="dlg" hidden><div class="dbox"><div class="dhd"><b id="dlgTitle"></b><button id="dlgClose">&times;</button></div><div id="dlgBody"></div></div></div>
+
+<div id="card" hidden><div id="cardInfo"></div><div id="cardCtl"></div></div>
+
+<!-- conflict chip + warning window -->
+<div id="stca" hidden><span id="stcaText"></span><button id="stcaFix" class="fix" hidden title="Send the suggested instruction">Fix</button><button id="stcaList" title="Show the conflict list">List</button><button id="stcaIgnore" title="Ignore these conflicts">Ignore</button></div>
+<div id="cwin" hidden>
+  <div class="chead"><b>CONFLICT WARNINGS</b><span class="muted">less than 3 NM and 1,000 ft</span><button id="cwIgnoreAll">Ignore all</button><button id="cwClose">&times;</button></div>
+  <div id="cwList"></div>
+</div>
+
+<!-- comms window -->
+<div id="comms">
+  <div class="chead"><b>COMMS</b><span class="muted">ATC &harr; pilots</span><button id="cHelp" title="Command help">?</button><button id="cMin" title="Minimise">&ndash;</button></div>
+  <div id="clog"></div>
+  <div id="chelp" hidden>
+    <b>Commands</b> (select a plane, or start with its callsign):<br>
+    <code>H270</code> fly heading, <code>L090</code> / <code>R180</code> turn left / right<br>
+    <code>A050</code> = 5,000 ft, <code>FL350</code> = flight level 350<br>
+    <code>S210</code> speed, <code>SR</code> normal speed<br>
+    <code>D KORD</code> direct to an airport, <code>D OBK</code> direct to a radio beacon (VOR/NDB), <code>ILS 28C</code> cleared ILS approach<br>
+    Center: <code>HO</code> hand off (arrivals to Approach, others to the next sector)<br>
+    Ground: <b>Build taxi route</b> (plane card or Route button) then click taxiway names in order; <code>PB</code> push back, <code>TAXI</code> (or <code>TAXI 10L VIA B A</code>, <code>TAXI C17</code> for a gate), <code>HOLD</code>, <code>CONT</code>, <code>CROSS</code> runway<br>
+    Voice: hold <code>`</code> or the mic button and speak normal ATC phrases<br>
+    <code>RON</code> resume own navigation to destination<br>
+    Tower: <code>LUAW</code> line up and wait, <code>CTO</code> cleared for takeoff (<code>CTO H270 A050</code> with vectors), <code>CL</code> cleared to land, <code>GA</code> go around<br>
+    Example: <code>DLH4283 L090 A050 S210</code>
+  </div>
+  <div class="cin"><span id="cTarget">--</span><input id="cmd" placeholder="Type a command, e.g. H270 A050 S210" autocomplete="off"><button id="micBtn" title="Hold to speak a command (or hold the ` key)"><svg viewBox="0 0 24 24" width="16" height="16"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button><button id="cmdGo">Send</button></div>
+</div>
+<div id="statusbar"></div>
+
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/leaflet-maplibre-gl.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

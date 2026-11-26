@@ -1,0 +1,30 @@
+name: Build NIGHTLOOP OS
+on:
+  workflow_dispatch:
+  push:
+    tags: ['os-v*']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make room
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Build the image
+        run: sudo bash os/build.sh
+      - name: Publish the image (Releases)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: NIGHTLOOP OS build ${{ github.run_number }}
+          body: |
+            Flash nightloop-os.img.xz with Raspberry Pi Imager (Use custom) or balenaEtcher.
+            Then run SETUP_NIGHTLOOP_OS_CARD.bat on your PC to set Wi-Fi, put the card in the Pi and switch it on.
+          files: |
+            out/nightloop-os.img.xz
+            out/SHA256SUMS.txt
