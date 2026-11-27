@@ -16,7 +16,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import urllib.parse
 from urllib.parse import parse_qs, urlparse
 
-APP, VERSION = "NIGHTLOOP", "1.4"
+APP, VERSION = "NIGHTLOOP", "1.5"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(ROOT, "static")
 DATA = os.path.join(ROOT, "data")
@@ -157,12 +157,15 @@ AP_TYPES = ("large_airport", "medium_airport", "small_airport")
 OURAIRPORTS = "https://davidmegginson.github.io/ourairports-data/"
 
 
+FORCE_DL = {"on": False}
+
+
 def load_airports():
     AIRPORTS.clear(); AP_INDEX.clear(); RUNWAYS.clear(); LARGE.clear(); RWY_ENDS.clear()
     try:
         for name in ("airports.csv", "runways.csv"):
             path = os.path.join(DATA, name)
-            if not os.path.exists(path) or time.time() - os.path.getmtime(path) > 7 * 86400:
+            if FORCE_DL["on"] or not os.path.exists(path) or time.time() - os.path.getmtime(path) > 7 * 86400:
                 try:
                     log(f"Downloading {name} from OurAirports...")
                     req = urllib.request.Request(OURAIRPORTS + name, headers={"User-Agent": UA})
@@ -239,7 +242,7 @@ def load_navaids():
     NAVAIDS.clear(); NAV_INDEX.clear()
     path = os.path.join(DATA, "navaids.csv")
     try:
-        if not os.path.exists(path) or time.time() - os.path.getmtime(path) > 7 * 86400:
+        if FORCE_DL["on"] or not os.path.exists(path) or time.time() - os.path.getmtime(path) > 7 * 86400:
             try:
                 log("Downloading navaids.csv from OurAirports...")
                 req = urllib.request.Request(OURAIRPORTS + "navaids.csv", headers={"User-Agent": UA})
@@ -1828,9 +1831,10 @@ def gnd_load(tw, force=False):
                     old_v = json.load(f).get("nl_v", 1)
             except Exception:
                 old_v = 0
-        if force or not os.path.exists(path) or old_v < 2 or time.time() - os.path.getmtime(path) > 30 * 86400:
+        if force or not os.path.exists(path) or old_v < 3 or time.time() - os.path.getmtime(path) > 30 * 86400:
             log(f"Ground: downloading taxiways and gates for {code} from OpenStreetMap...")
-            q = (f'[out:json][timeout:180];(way["aeroway"~"^(taxiway|taxilane|runway|apron|terminal|hangar|parking_position)$"](around:5000,{tw["lat"]},{tw["lon"]});'
+            q = (f'[out:json][timeout:180];(way["aeroway"~"^(taxiway|taxilane|runway|apron|terminal|hangar|parking_position|jet_bridge|holding_position)$"](around:5000,{tw["lat"]},{tw["lon"]});'
+                 f'way["landuse"="grass"](around:3500,{tw["lat"]},{tw["lon"]});'
                  f'node["aeroway"~"^(gate|parking_position|holding_position)$"](around:5000,{tw["lat"]},{tw["lon"]});'
                  f'way["building"]["aeroway"](around:5000,{tw["lat"]},{tw["lon"]}););out body;>;out skel qt;')
             blob, errs = None, []
@@ -1850,7 +1854,7 @@ def gnd_load(tw, force=False):
             if blob is None:
                 raise RuntimeError("; ".join(errs))
             osm_ = json.loads(blob)
-            osm_["nl_v"] = 2
+            osm_["nl_v"] = 3
             with open(path + ".tmp", "w", encoding="utf-8") as f:
                 json.dump(osm_, f)
             os.replace(path + ".tmp", path)
@@ -1955,7 +1959,7 @@ def gnd_build(osm, tw):
 def gnd_diagram(els, pos):
     """Vector airport diagram for the Ground window (like a ground radar / airport chart)."""
     r6 = lambda p: [round(p[0], 6), round(p[1], 6)]
-    d = {"rwy": [], "twy": [], "apron": [], "bldg": [], "hold": []}
+    d = {"rwy": [], "twy": [], "apron": [], "bldg": [], "hold": [], "stand": [], "bridge": [], "grass": [], "holdl": []}
     for e in els:
         tags = e.get("tags") or {}
         aw = tags.get("aeroway")
@@ -1974,6 +1978,15 @@ def gnd_diagram(els, pos):
             d["twy"].append([pts, w or (23 if aw == "taxiway" else 15), (tags.get("ref") or "").upper()])
         elif aw == "apron":
             d["apron"].append([pts, (tags.get("name") or tags.get("ref") or "").upper()[:30]])
+        elif aw == "parking_position":
+            d["stand"].append([pts, (tags.get("ref") or tags.get("name") or "").upper()[:8]])
+        elif aw == "jet_bridge":
+            d["bridge"].append(pts)
+        elif aw == "holding_position":
+            d["holdl"].append(pts)
+        elif tags.get("landuse") == "grass":
+            if len(pts) <= 400:
+                d["grass"].append(pts)
         elif aw in ("terminal", "hangar") or tags.get("building"):
             d["bldg"].append(pts)
     return d
@@ -2777,6 +2790,204 @@ def voice_local_stop(body):
     return api_voice({"alts": options, "id": body.get("id")})
 
 
+# ---- natural pilot voices: Piper neural text-to-speech, runs offline on Windows and the Raspberry Pi
+PIPER_REL = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/"
+PIPER_HF = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/"
+PIPER_VOICES = [("ryan", "en/en_US/ryan/medium/en_US-ryan-medium"), ("alan", "en/en_GB/alan/medium/en_GB-alan-medium"),
+                ("lessac", "en/en_US/lessac/medium/en_US-lessac-medium")]
+TTS = {"installing": False, "msg": "", "lock": threading.Lock()}
+
+
+def piper_exe():
+    d = os.path.join(DATA, "piper")
+    for n in ("piper.exe", "piper"):
+        p = os.path.join(d, n)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def tts_voices():
+    vd = os.path.join(DATA, "voices")
+    return [n for n, path in PIPER_VOICES if os.path.exists(os.path.join(vd, os.path.basename(path) + ".onnx"))]
+
+
+def tts_info(q=None):
+    return {"installed": bool(piper_exe()) and bool(tts_voices()), "voices": tts_voices(), "installing": TTS["installing"], "message": TTS["msg"]}
+
+
+def tts_install(body):
+    if TTS["installing"]:
+        return {"ok": True, "message": "Already downloading"}, 200
+
+    def job():
+        import io, zipfile, tarfile, platform
+        TTS.update(installing=True)
+        try:
+            mach = platform.machine().lower()
+            pkg = "piper_windows_amd64.zip" if os.name == "nt" else ("piper_linux_aarch64.tar.gz" if mach in ("aarch64", "arm64")
+                                                                    else "piper_linux_armv7l.tar.gz" if mach.startswith("arm") else "piper_linux_x86_64.tar.gz")
+            if not piper_exe():
+                TTS["msg"] = "Downloading the voice engine (25 MB)..."
+                blob = urllib.request.urlopen(urllib.request.Request(PIPER_REL + pkg, headers={"User-Agent": UA}), timeout=300).read()
+                if pkg.endswith(".zip"):
+                    zipfile.ZipFile(io.BytesIO(blob)).extractall(DATA)
+                else:
+                    tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz").extractall(DATA)
+                exe = piper_exe()
+                if exe and os.name != "nt":
+                    os.chmod(exe, 0o755)
+            vd = os.path.join(DATA, "voices")
+            os.makedirs(vd, exist_ok=True)
+            for i, (name, path) in enumerate(PIPER_VOICES):
+                base = os.path.join(vd, os.path.basename(path))
+                if os.path.exists(base + ".onnx"):
+                    continue
+                TTS["msg"] = f"Downloading voice {i + 1} of {len(PIPER_VOICES)} ({name}, 60 MB)..."
+                for ext in (".onnx.json", ".onnx"):
+                    blob = urllib.request.urlopen(urllib.request.Request(PIPER_HF + path + ext, headers={"User-Agent": UA}), timeout=900).read()
+                    with open(base + ext + ".tmp", "wb") as f:
+                        f.write(blob)
+                    os.replace(base + ext + ".tmp", base + ext)
+            TTS["msg"] = "Natural voices installed"
+        except Exception as e:
+            TTS["msg"] = f"Download failed: {str(e)[:120]}"
+        TTS["installing"] = False
+    threading.Thread(target=job, daemon=True).start()
+    return {"ok": True, "message": "Downloading..."}, 200
+
+
+def tts_wav(q):
+    """WAV bytes for a pilot/controller line (cached)."""
+    import hashlib
+    exe, voices = piper_exe(), tts_voices()
+    if not exe or not voices:
+        return None
+    text = str(q.get("text", ""))[:400]
+    v = q.get("voice") if q.get("voice") in voices else voices[int(q.get("n", 0) or 0) % len(voices)]
+    speed = max(0.6, min(1.4, num(q.get("speed"), 1.0)))
+    key = hashlib.sha1(f"{v}|{speed:.2f}|{text}".encode()).hexdigest()[:20]
+    cd = os.path.join(DATA, "tts_cache")
+    os.makedirs(cd, exist_ok=True)
+    out = os.path.join(cd, key + ".wav")
+    if not os.path.exists(out):
+        model = os.path.join(DATA, "voices", os.path.basename(dict(PIPER_VOICES)[v]) + ".onnx")
+        with TTS["lock"]:
+            r = subprocess.run([exe, "--model", model, "--length_scale", f"{1 / speed:.2f}", "--sentence_silence", "0.1", "--output_file", out],
+                               input=text.encode("utf-8"), capture_output=True, timeout=60, cwd=os.path.dirname(exe),
+                               creationflags=0x08000000 if os.name == "nt" else 0)
+        if r.returncode != 0 or not os.path.exists(out):
+            log(f"Voice failed: {r.stderr.decode(errors='ignore')[-200:]}")
+            return None
+        files = sorted((os.path.join(cd, f) for f in os.listdir(cd)), key=os.path.getmtime)
+        for f in files[:-400]:
+            try:
+                os.remove(f)
+            except Exception:
+                pass
+    with open(out, "rb") as f:
+        return f.read()
+
+
+# ---- "Update all data": downloads every source again
+DATA_JOB = {"running": False, "log": [], "t": None}
+
+
+def data_refresh(body):
+    if DATA_JOB["running"]:
+        return {"ok": True, "message": "Already updating"}, 200
+
+    def step(msg):
+        DATA_JOB["log"].append(time.strftime("%H:%M:%S ") + msg)
+        log("Update all data: " + msg)
+
+    def job():
+        DATA_JOB.update(running=True, log=[])
+        try:
+            step("Airports, runways and radio beacons (OurAirports)...")
+            FORCE_DL["on"] = True
+            with AI.lock:
+                load_airports()
+            FORCE_DL["on"] = False
+            step(f"  done: {len(AIRPORTS):,} airports, {len(NAVAIDS):,} beacons")
+            tw = tower_ctx()
+            if tw:
+                step(f"Airport map of {tw['code']} (taxiways, gates, buildings - OpenStreetMap)...")
+                gnd_load(dict(tw), True)
+                step("  " + (GND.get("note") or "done"))
+            step("Live traffic (VATSIM, IVAO, real-world ADS-B)...")
+            refresh_now()
+            step("  done")
+            step("Flight routes cache cleared")
+            try:
+                ROUTE_CACHE.clear()
+            except Exception:
+                pass
+            step("All data is up to date.")
+        except Exception as e:
+            step(f"Stopped: {e}")
+        finally:
+            FORCE_DL["on"] = False
+            DATA_JOB.update(running=False, t=time.time())
+    threading.Thread(target=job, daemon=True).start()
+    return {"ok": True, "message": "Updating all data..."}, 200
+
+
+def data_status(q):
+    return {"running": DATA_JOB["running"], "log": DATA_JOB["log"][-30:], "last": DATA_JOB["t"]}
+
+
+# ---- internet updates from GitHub (NIGHTLOOP OS checks by itself; any NIGHTLOOP can use the button)
+GH_UPD = {"last": None, "msg": "", "latest": None}
+
+
+def github_repo():
+    return CFG.get("update_github", "vigneshwarnagaraj/nightloop-os" if NL_OS else "") or ""
+
+
+def github_check(body=None, install=True):
+    repo = github_repo() or "vigneshwarnagaraj/nightloop-os"
+    try:
+        raw = urllib.request.urlopen(urllib.request.Request(f"https://raw.githubusercontent.com/{repo}/main/app/server.py",
+                                                            headers={"User-Agent": UA}), timeout=30).read(30000).decode("utf-8", "ignore")
+        m = re.search(r'APP, VERSION = "NIGHTLOOP", "([^"]+)"', raw)
+        latest = m.group(1) if m else None
+        GH_UPD.update(last=time.time(), latest=latest)
+        if not latest or vtuple(latest) <= vtuple(VERSION):
+            GH_UPD["msg"] = f"Up to date (version {VERSION})"
+            return {"ok": True, "message": GH_UPD["msg"], "latest": latest}, 200
+        if not install:
+            GH_UPD["msg"] = f"Version {latest} is available"
+            return {"ok": True, "message": GH_UPD["msg"], "latest": latest}, 200
+        import io, zipfile
+        blob = urllib.request.urlopen(urllib.request.Request(f"https://codeload.github.com/{repo}/zip/refs/heads/main",
+                                                             headers={"User-Agent": UA}), timeout=180).read()
+        src = zipfile.ZipFile(io.BytesIO(blob))
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for n in src.namelist():
+                parts = n.split("/", 2)
+                if len(parts) == 3 and parts[1] == "app" and parts[2] and not n.endswith("/") and \
+                        (parts[2] == "server.py" or parts[2].startswith("static/") or parts[2] == "os_update.sh"):
+                    z.writestr(parts[2], src.read(n))
+            z.writestr("VERSION", latest)
+        newv = install_package(buf.getvalue())
+        GH_UPD["msg"] = f"Installed version {newv} from the internet - restarting"
+        schedule_restart()
+        return {"ok": True, "message": GH_UPD["msg"], "latest": latest}, 200
+    except Exception as e:
+        GH_UPD["msg"] = f"Internet update check failed: {str(e)[:100]}"
+        return {"ok": False, "message": GH_UPD["msg"]}, 400
+
+
+def github_auto():
+    time.sleep(90)
+    while True:
+        if github_repo() and CFG.get("auto_update", True):
+            github_check()
+        time.sleep(6 * 3600)
+
+
 def api_voice(body):
     alts = [a for a in (body.get("alts") or []) if a][:5]
     if not alts:
@@ -3394,6 +3605,16 @@ class Handler(SimpleHTTPRequestHandler):
             return
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        if u.path == "/api/tts":
+            b = tts_wav(q)
+            if b is None:
+                return self.send_json({"error": "natural voices not installed"}, 404)
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/wav")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+            return
         if u.path == "/api/update/package":
             b = make_package()
             self.send_response(200)
@@ -3408,7 +3629,9 @@ class Handler(SimpleHTTPRequestHandler):
                   "/api/ground/diagram": api_ground_diagram, "/api/system": api_system, "/api/system/wifi": wifi_list,
                   "/api/system/osupdate": os_update_status, "/api/peers": api_peers,
                   "/api/positions": lambda q: {"positions": CFG.get("positions")},
-                  "/api/voice/local": voice_local_info, "/api/voice/local/partial": voice_local_partial}
+                  "/api/voice/local": voice_local_info, "/api/voice/local/partial": voice_local_partial,
+                  "/api/tts/info": tts_info, "/api/data/status": data_status,
+                  "/api/update/github": lambda q: {"repo": github_repo(), "auto": CFG.get("auto_update", True), **GH_UPD}}
         if u.path in routes:
             return self.send_json(routes[u.path](q))
         return super().do_GET()
@@ -3429,7 +3652,8 @@ class Handler(SimpleHTTPRequestHandler):
                   "/api/system/wifi": wifi_connect, "/api/system/power": power, "/api/system/osupdate": os_update,
                   "/api/update/pull": update_pull, "/api/ground/preview": api_ground_preview,
                   "/api/voice/local/install": voice_local_install, "/api/voice/local/start": voice_local_start,
-                  "/api/voice/local/stop": voice_local_stop, "/api/voice/mic": set_mic, "/api/update/local": update_local, "/api/update/push": update_push}
+                  "/api/voice/local/stop": voice_local_stop, "/api/voice/mic": set_mic,
+                  "/api/tts/install": tts_install, "/api/data/refresh": data_refresh, "/api/update/github": github_check, "/api/update/local": update_local, "/api/update/push": update_push}
         if u.path == "/api/quit":
             return self.send_json(*quit_app(body)) if self.local_only() else self.send_json({"error": "local only"}, 403)
         if u.path in routes:
@@ -3457,6 +3681,7 @@ def main():
             time.sleep(0.5)                       # an older copy is still closing (after an update)
     SRV["srv"] = srv
     threading.Thread(target=discovery_listener, daemon=True).start()
+    threading.Thread(target=github_auto, daemon=True).start()
     url = f"http://localhost:{port}/"
     log(f"{APP} v{VERSION} running at {url}" + (f" - other devices: " + ", ".join(f"http://{i}:{port}" for i in lan_ips()) if bind == "0.0.0.0" else ""))
     log("Keep this window open. Close it to stop the simulator.")

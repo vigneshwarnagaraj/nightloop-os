@@ -1,7 +1,7 @@
 'use strict';
 // NIGHTLOOP - V1 browser prototype (v0.7): multi-window layout, task windows (World / Approach / Tower),
 // traffic drawing, settings, search, comms, conflict alerts.
-const APP_VERSION = '1.4';
+const APP_VERSION = '1.5';
 
 const COLORS = { ai: '#39ff6a', vatsim: '#00d9ff', ivao: '#ffb300', real: '#ff3df2' };
 const NAMES = { ai: 'AI planes', vatsim: 'VATSIM', ivao: 'IVAO', real: 'Real world (ADS-B)' };
@@ -26,7 +26,7 @@ const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const params = new URLSearchParams(location.search);
 const SOLO = KINDS[params.get('solo')] ? params.get('solo') : null;      // a popped-out window shows one task only
 const DEFAULTS = { style: 'darktest', placeLabels: false, grid: 'tl', labels: true, trails: true, vectors: true,
-  airports: true, runways: true, apLabels: 'full', rate: '1000', statusbar: true, cat: 'general', comms: true, stca: true, voiceIn: true, pttKey: 'Backquote', pttName: '`', pttMode: 'hold', pttHeadset: false, pttGamepad: false, voiceEngine: 'auto', voiceOut: true, voiceRate: '1.1', gndDiagram: true, gndTheme: 'chart', twrChart: true, showAiComms: true,
+  airports: true, runways: true, apLabels: 'full', rate: '1000', statusbar: true, cat: 'general', comms: true, stca: true, voiceIn: true, pttKey: 'Backquote', pttName: '`', pttMode: 'hold', pttHeadset: false, pttGamepad: false, voiceEngine: 'auto', voiceOut: true, voiceRate: '1.1', gndDiagram: true, gndTheme: 'real', twrChart: true, voiceNatural: true, radioFx: true, speakAi: false, showAiComms: true,
   clock24: 'true', tz: 'system', showUtc: false, showSeconds: true, layout: 1, panes: ['world', 'approach', 'tower', 'world'] };
 const S = { ...DEFAULTS };
 try { Object.assign(S, JSON.parse(localStorage.getItem('nightloop.settings') || '{}')); } catch (e) { /* ignore */ }
@@ -115,7 +115,7 @@ class View {
   constructor(kind, el, idx) {
     this.kind = kind; this.el = el; this.idx = idx; this.cfg = KINDS[kind];
     this.airports = []; this.runways = []; this.navaids = []; this.screenPts = []; this.apPts = []; this.ap = null;
-    el.className = 'pane' + (chartKind(kind) ? ' diagram' + (S.gndTheme === 'chart' ? ' chart' : '') : '');
+    el.className = 'pane' + (chartKind(kind) ? ' diagram' + (S.gndTheme === 'chart' ? ' chart' : S.gndTheme === 'real' ? ' real' : '') : '');
     const kindSel = SOLO ? '' : `<select class="pkind" title="Change what this window shows">${Object.keys(KINDS).map((k) => `<option value="${k}"${k === kind ? ' selected' : ''}>${KINDS[k].title}</option>`).join('')}</select>`;
     el.innerHTML = `<div class="phd">${kindSel}<span class="ptitle">${kindSel ? '' : this.cfg.title}<em></em></span>` +
       (kind !== 'world' ? '<input class="pap" placeholder="Airport" maxlength="4" title="Type an airport (ICAO) and press Enter to move this task there">' : '') +
@@ -712,6 +712,8 @@ async function loadDiagram(force) {
     const P = (pts) => { const a = new Float64Array(pts.length * 2); pts.forEach((q, i) => { const pp = L.CRS.EPSG3857.latLngToPoint(L.latLng(q[0], q[1]), 20); a[i * 2] = pp.x; a[i * 2 + 1] = pp.y; }); return a; };
     const apr = d.diagram.apron.map((x) => (Array.isArray(x[0]) && Array.isArray(x[0][0]) ? x : [x, '']));
     groundDiagram = {
+      grass: (d.diagram.grass || []).map(P), bridge: (d.diagram.bridge || []).map(P), holdl: (d.diagram.holdl || []).map(P),
+      stand: (d.diagram.stand || []).map(([pts, ref]) => [P(pts), ref]),
       apron: apr.map(([pts]) => P(pts)), apronName: apr.map(([pts, n]) => {
         if (!n) return null; let la = 0, lo = 0; pts.forEach((q) => { la += q[0]; lo += q[1]; }); return [la / pts.length, lo / pts.length, n]; }).filter(Boolean),
       bldg: d.diagram.bldg.map(P),
@@ -728,6 +730,7 @@ function drawDiagram(s, z) {
     for (let i = 0; i < a.length; i += 2) { const x = a[i] * sc - tl.x, y = a[i + 1] * sc - tl.y; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
     if (close) ctx.closePath();
   };
+  if (S.gndTheme === 'real') return drawRealistic(s, z, sc, tl, mpp, path);
   const C = S.gndTheme === 'chart'
     ? { apron: '#e4ede7', apronEdge: '#b4c7bb', bldg: '#6f7a7a', bldgEdge: '#566161', twyEdge: '#7f8a8a', twy: '#a9b2b2', twyLine: null, rwy: '#727d7d', rwyEdge: '#ffffff', name: '#47574f' }
     : { apron: '#16202a', apronEdge: null, bldg: '#2b3743', bldgEdge: '#3d4b58', twyEdge: null, twy: '#3a4754', twyLine: 'rgba(242,194,48,0.55)', rwy: '#6d7a86', rwyEdge: null, name: '#7f8c98' };
@@ -755,6 +758,76 @@ function drawDiagram(s, z) {
       if (p.x > -w && p.y > 0 && p.x < s.x + w && p.y < s.y) ctx.fillText(n, p.x - w / 2, p.y + 4);
     }
   }
+}
+// realistic airport: grass, concrete aprons, asphalt with painted lines, runway markings, terminals with shadows, jet bridges, stands
+function drawRealistic(s, z, sc, tl, mpp, path) {
+  const G = groundDiagram, P = (a, i) => [a[i] * sc - tl.x, a[i + 1] * sc - tl.y];
+  ctx.fillStyle = '#4b6b3c'; for (const a of G.grass || []) { path(a, true); ctx.fill(); }
+  ctx.fillStyle = '#9ea4a6'; ctx.strokeStyle = '#8b9193'; ctx.lineWidth = 1;
+  for (const a of G.apron) { path(a, true); ctx.fill(); ctx.stroke(); }
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#b9a24a'; for (const [a, w] of G.twy) { ctx.lineWidth = Math.max(3, w / mpp) + Math.max(1, 1.5 / mpp * 2); path(a); ctx.stroke(); }  // yellow edge lines
+  ctx.strokeStyle = '#3b3f44'; for (const [a, w] of G.twy) { ctx.lineWidth = Math.max(3, w / mpp); path(a); ctx.stroke(); }
+  if (z >= 14) { ctx.strokeStyle = '#e8c330'; ctx.lineWidth = Math.max(1, 0.4 / mpp * 2); for (const [a] of G.twy) { path(a); ctx.stroke(); } }
+  ctx.lineCap = 'butt';
+  for (const [a, w, ref] of G.rwy) {
+    const rw = Math.max(5, w / mpp);
+    ctx.strokeStyle = '#f2f2f2'; ctx.lineWidth = rw + Math.max(1.5, 2 / mpp); path(a); ctx.stroke();      // edge lines
+    ctx.strokeStyle = '#2a2d31'; ctx.lineWidth = rw; path(a); ctx.stroke();
+    if (z >= 13.5) { ctx.save(); ctx.setLineDash([Math.max(6, 36 / mpp), Math.max(5, 24 / mpp)]); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1, 0.9 / mpp); path(a); ctx.stroke(); ctx.restore(); }
+    if (z >= 14 && a.length >= 4) {                  // threshold "piano keys" and painted numbers at both ends
+      const ids = (ref || '').split('/');
+      for (const [i0, i1, id] of [[0, 2, ids[0]], [a.length - 2, a.length - 4, ids[1]]]) {
+        const p0 = P(a, i0), p1 = P(a, i1), dx = p1[0] - p0[0], dy = p1[1] - p0[1], L = Math.hypot(dx, dy) || 1;
+        const ux = dx / L, uy = dy / L, nx = -uy, ny = ux, keys = 8, half = rw / 2 * 0.86;
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1, (half * 2 / keys) * 0.55);
+        for (let k = 0; k < keys; k++) {
+          const off = -half + (k + 0.5) * (half * 2 / keys);
+          const sx = p0[0] + ux * 6 / mpp + nx * off, sy = p0[1] + uy * 6 / mpp + ny * off;
+          ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + ux * 30 / mpp, sy + uy * 30 / mpp); ctx.stroke();
+        }
+        if (id && z >= 14.5) {
+          const tx = p0[0] + ux * 70 / mpp, ty = p0[1] + uy * 70 / mpp;
+          ctx.save(); ctx.translate(tx, ty); ctx.rotate(Math.atan2(uy, ux) - Math.PI / 2);
+          ctx.fillStyle = '#ffffff'; ctx.font = `bold ${Math.max(10, Math.min(rw * 0.7, 40))}px Arial`; ctx.textAlign = 'center'; ctx.fillText(id, 0, 0);
+          ctx.restore();
+        }
+      }
+    }
+  }
+  if (z >= 14.5) {                                   // red/yellow hold-short markings
+    ctx.strokeStyle = '#e8c330'; ctx.lineWidth = Math.max(2, 1 / mpp);
+    for (const a of G.holdl || []) { path(a); ctx.stroke(); }
+    ctx.fillStyle = '#e0202e'; for (const a of G.hold) { const [x, y] = P(a, 0); ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill(); }
+  }
+  if (z >= 15) { ctx.strokeStyle = '#f0d040'; ctx.lineWidth = 1.2; for (const [a] of G.stand || []) { path(a); ctx.stroke(); } }
+  // buildings with shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  for (const a of G.bldg) { ctx.save(); ctx.translate(Math.max(2, 4 / mpp), Math.max(2, 4 / mpp)); path(a, true); ctx.fill(); ctx.restore(); }
+  ctx.fillStyle = '#d5d9dc'; ctx.strokeStyle = '#7b8187'; ctx.lineWidth = 1;
+  for (const a of G.bldg) { path(a, true); ctx.fill(); ctx.stroke(); }
+  ctx.lineCap = 'round'; ctx.strokeStyle = '#7f868c'; ctx.lineWidth = Math.max(2, 4 / mpp);
+  for (const a of G.bridge || []) { path(a); ctx.stroke(); }
+  ctx.lineCap = 'butt';
+  if (z >= 16) {
+    ctx.font = 'bold 10px Consolas, monospace';
+    for (const [a, ref] of G.stand || []) { if (!ref) continue; const [x, y] = P(a, 0); label(ref, x - 8, y - 4, '#1a1a1a', 'rgba(240,208,64,0.95)'); }
+  }
+  if (z >= 14) {
+    ctx.font = 'bold 13px "Segoe UI", Arial, sans-serif'; ctx.fillStyle = 'rgba(30,34,38,0.7)';
+    for (const [la, lo, n] of G.apronName) {
+      const p = map.latLngToContainerPoint([la, lo]); const w = ctx.measureText(n).width;
+      if (p.x > -w && p.y > 0 && p.x < s.x + w && p.y < s.y) ctx.fillText(n, p.x - w / 2, p.y + 4);
+    }
+  }
+}
+// real wingspans (m) for drawing aircraft at true size when zoomed in on an airport
+function wingspan(type) {
+  const t = (type || '').toUpperCase();
+  if (/^A38/.test(t)) return 80; if (/^B74/.test(t)) return 68; if (/^(B77|A35|A34)/.test(t)) return 64; if (/^(B78|A33)/.test(t)) return 60;
+  if (/^(B76|A30|A31[0-9]?$)/.test(t)) return 47; if (/^(A3[12]|A2|B73|B3[89]|A22|BCS)/.test(t)) return 35; if (/^(E19|E2|E17|E75)/.test(t)) return 28;
+  if (/^(CRJ|E14|E13)/.test(t)) return 23; if (/^(AT|DH8|Q4)/.test(t)) return 27; if (/^(C1|C2|PA|SR2|DA)/.test(t)) return 11;
+  return 35;
 }
 // ---------- taxi route builder: click taxiway names in order ----------
 let RB = null;
@@ -845,7 +918,7 @@ function drawGroundInfo(s, z, light) {
     if (p.x < 0 || p.y < 0 || p.x > s.x || p.y > s.y) continue;
     const pc = light ? '#6a2bb0' : '#c9a0ff', sel = RB && RB.to === name;
     ctx.strokeStyle = sel ? '#b02fc4' : pc; ctx.lineWidth = sel ? 2.5 : 1.2; ctx.strokeRect(p.x - 3, p.y - 3, 6, 6);
-    if (z >= 15.2 || sel || (RB && RB.kind === 'arr')) label(name, p.x + 5, p.y - 4, sel ? '#b02fc4' : light ? '#4b1d80' : '#d9c2ff', light ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.85)');
+    if (z >= (S.gndTheme === 'real' ? 16.3 : 15.2) || sel || (RB && RB.kind === 'arr')) label(name, p.x + 5, p.y - 4, sel ? '#b02fc4' : light ? '#4b1d80' : '#d9c2ff', light ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.85)');
     V.gateHits.push([p.x - 6, p.y - 14, ctx.measureText(name).width + 14, 20, name]);
   }
 }
@@ -897,7 +970,7 @@ function drawView(v, now) {
   const cv = v.radar._container;
   if (!cv || !v.radar._bounds || v.radar._scaled || v.map._animatingZoom) return 0;
   V = v; map = v.map; ctx = v.ctx;
-  const chart = chartKind(v.kind) && S.gndTheme === 'chart';
+  const chart = chartKind(v.kind) && (S.gndTheme === 'chart' || S.gndTheme === 'real');
   const s = map.getSize(), z = map.getZoom(), light = chart || (LIGHT_STYLES.has(S.style) && !chartKind(v.kind));
   DPR = window.devicePixelRatio || 1;
   const off = map.containerPointToLayerPoint([0, 0]).subtract(v.radar._bounds.min);
@@ -934,7 +1007,12 @@ function drawView(v, now) {
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.moveTo(sp.x, sp.y); ctx.lineTo(vp.x, vp.y); ctx.stroke();
       ctx.lineWidth = 1.3; ctx.strokeStyle = col; ctx.stroke();
     }
-    drawPlane(sp.x, sp.y, t.track || 0, t.ground ? scale * 0.7 : scale, col, t.ground ? 0.7 : 1);
+    let psc = t.ground ? scale * 0.7 : scale;
+    if (chartKind(v.kind) && z >= 14) {               // true size on the airport map
+      const mppx = 40075016.7 * Math.cos(p[0] * D2R) / (256 * 2 ** z);
+      psc = Math.max(psc, wingspan(t.type) / mppx / 19);
+    }
+    drawPlane(sp.x, sp.y, t.track || 0, psc, col, t.ground && !chartKind(v.kind) ? 0.7 : 1);
     if (t.id === selected) { ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(sp.x, sp.y, 16, 0, Math.PI * 2); ctx.stroke(); }
     if ((labels && (!t.ground || t.twr || t.ctl || t.gnd || v.kind === 'tower' || v.kind === 'ground')) || t.id === selected) {
       const trend = t.vs > 300 ? '↑' : t.vs < -300 ? '↓' : ' ';
@@ -1140,7 +1218,7 @@ let commsLoaded = false;
 async function pollComms() {
   try {
     const d = await (await fetch('/api/comms?since=' + commsSeq)).json();
-    d.items.forEach((m) => { addLine(m); if (commsLoaded && (m.kind === 'pilot' || m.kind === 'unable') && m.who !== 'NIGHTLOOP') speak(m.who, m.text); });
+    d.items.forEach((m) => { addLine(m); if (commsLoaded && m.who !== 'NIGHTLOOP' && (m.kind === 'pilot' || m.kind === 'unable' || (S.speakAi && m.kind === 'ai'))) speak(m.who, m.text); });
     commsSeq = d.seq; commsLoaded = true;
   } catch (e) { /* ignore */ }
 }
@@ -1562,14 +1640,79 @@ document.addEventListener('keydown', armHeadset);
 let voices = [];
 const loadVoices = () => { try { voices = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang)); } catch (e) { voices = []; } };
 if (window.speechSynthesis) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
-function speak(who, text) {
-  if (!S.voiceOut || !window.speechSynthesis) return;
-  let h = 0; for (const ch of who) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  const u = new SpeechSynthesisUtterance(text.replace(/\bFL(\d)/g, 'flight level $1'));
-  if (voices.length) u.voice = voices[h % voices.length];
-  u.pitch = 0.85 + (h % 7) * 0.05; u.rate = parseFloat(S.voiceRate) || 1.1;
-  speechSynthesis.speak(u);
+// radio-style reading of numbers: FL350 -> "flight level three five zero", 270 -> "two seven zero", 10L -> "one zero left"
+const DIG = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'niner'];
+const digits = (n) => n.split('').map((d) => DIG[+d]).join(' ');
+function speakable(text) {
+  return text
+    .replace(/\bFL\s?(\d{2,3})\b/g, (m, n) => 'flight level ' + digits(n))
+    .replace(/\b(\d{1,2})([LRC])\b/g, (m, n, s) => digits(n) + ' ' + { L: 'left', R: 'right', C: 'center' }[s])
+    .replace(/\b(\d{1,3}),?000\b/g, (m, n) => digits(n) + ' thousand')
+    .replace(/\b(\d{1,2}),?(\d)00\b/g, (m, a, b) => digits(a) + ' thousand ' + DIG[+b] + ' hundred')
+    .replace(/\b\d{2,4}\b/g, (m) => digits(m))
+    .replace(/\bILS\b/g, 'I L S').replace(/\bNM\b/g, 'miles').replace(/\bkt\b/g, 'knots');
 }
+let TTSI = null, audioCtx = null, sayChain = Promise.resolve();
+async function loadTts() {
+  try { TTSI = await (await fetch('/api/tts/info')).json(); } catch (e) { TTSI = null; }
+  const el = $('ttsInfo');
+  if (el) {
+    el.textContent = TTSI && TTSI.installed ? `Natural voices ready (${TTSI.voices.join(', ')}).` : TTSI && TTSI.installing ? TTSI.message : (TTSI && TTSI.message ? TTSI.message + ' ' : '') + 'Natural voices are not installed - the computer voice is used.';
+    $('ttsInstall').hidden = !!(TTSI && (TTSI.installed || TTSI.installing));
+  }
+  if (TTSI && TTSI.installing) setTimeout(loadTts, 3000);
+}
+function bestSystemVoice(h) {
+  const nice = voices.filter((v) => /natural|neural|online|google uk english male|google us english/i.test(v.name));
+  const pool = nice.length ? nice : voices;
+  return pool.length ? pool[h % pool.length] : null;
+}
+async function playRadio(buf) {
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  const audio = await audioCtx.decodeAudioData(buf);
+  const src = audioCtx.createBufferSource(); src.buffer = audio;
+  let node = src;
+  if (S.radioFx) {                                   // VHF radio: narrow band, light crunch, squelch hiss at start/end
+    const hp = audioCtx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 320;
+    const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3200;
+    const ws = audioCtx.createWaveShaper(); const c = new Float32Array(256);
+    for (let i = 0; i < 256; i++) { const x = i / 128 - 1; c[i] = Math.tanh(2.2 * x) / Math.tanh(2.2); }
+    ws.curve = c;
+    node.connect(hp); hp.connect(lp); lp.connect(ws); node = ws;
+    const n = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.12, audioCtx.sampleRate), d = n.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 0.06;
+    for (const at of [0, audio.duration + 0.1]) {
+      const ns = audioCtx.createBufferSource(); ns.buffer = n; const g = audioCtx.createGain(); g.gain.value = 0.7;
+      ns.connect(g); g.connect(audioCtx.destination); ns.start(audioCtx.currentTime + at);
+    }
+  }
+  const g = audioCtx.createGain(); g.gain.value = 1.0; node.connect(g); g.connect(audioCtx.destination);
+  src.start(audioCtx.currentTime + 0.1);
+  return new Promise((res) => { src.onended = () => setTimeout(res, 250); });
+}
+function speak(who, text) {
+  if (!S.voiceOut) return;
+  let h = 0; for (const ch of who) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const say = speakable(text);
+  const rate = parseFloat(S.voiceRate) || 1.1;
+  sayChain = sayChain.then(async () => {
+    if (S.voiceNatural && TTSI && TTSI.installed) {
+      try {
+        const r = await fetch(`/api/tts?n=${h}&speed=${rate}&text=` + encodeURIComponent(say));
+        if (r.ok) { await playRadio(await r.arrayBuffer()); return; }
+      } catch (e) { /* fall back */ }
+    }
+    if (!window.speechSynthesis) return;
+    await new Promise((res) => {
+      const u = new SpeechSynthesisUtterance(say);
+      const v = bestSystemVoice(h); if (v) u.voice = v;
+      u.pitch = 0.9 + (h % 5) * 0.04; u.rate = rate; u.onend = res; u.onerror = res;
+      speechSynthesis.speak(u);
+    });
+  }).catch(() => {});
+}
+$('ttsInstall').onclick = async () => { try { await post('/api/tts/install', {}); } catch (e) { /* ignore */ } setTimeout(loadTts, 800); };
+loadTts();
 $('voiceTest').onclick = () => speak('TEST123', 'Tower, Speedbird 123, holding short runway 10 left, ready for departure');
 $('voiceMic').onchange = async () => { await post('/api/voice/mic', { index: $('voiceMic').value }); loadVoiceLocal(); };
 $('micTest').onclick = async () => {
@@ -1673,6 +1816,32 @@ $('osUpd').onclick = async () => {
   tick();
 };
 loadSystem();
+$('dataAll').onclick = async () => {
+  try { await post('/api/data/refresh', {}); } catch (e) { /* ignore */ }
+  const tick = async () => {
+    try {
+      const d = await (await fetch('/api/data/status')).json();
+      $('dataLog').textContent = d.log.join('\n');
+      if (d.running) setTimeout(tick, 1500); else { views.forEach((v) => v.loadAirports()); loadDiagram(true); pollGround(); }
+    } catch (e) { setTimeout(tick, 3000); }
+  };
+  tick();
+};
+async function loadGh() {
+  try {
+    const d = await (await fetch('/api/update/github')).json();
+    $('ghMsg').textContent = (d.msg || '') + (d.repo ? '' : ' (internet updates are mainly for NIGHTLOOP OS on the Raspberry Pi)');
+  } catch (e) { /* ignore */ }
+}
+$('ghCheck').onclick = async () => {
+  $('ghMsg').textContent = 'Checking the internet for a newer NIGHTLOOP...';
+  try { const r = await post('/api/update/github', {}); $('ghMsg').textContent = r.message; } catch (e) { $('ghMsg').textContent = 'Restarting with the new version...'; }
+};
+loadGh();
+
+// ---------- Learn (help & training guide) ----------
+$('learnBtn').onclick = () => { $('learn').hidden = false; };
+$('learnClose').onclick = () => { $('learn').hidden = true; };
 
 // ---------- boot screen ----------
 const bootT0 = performance.now();

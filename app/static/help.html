@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Learn ATC with NIGHTLOOP</title>
+<style>
+:root{--pk:#f0479a;--tx:#dbe4ea;--mu:#8fa0ad;--ln:#223040;--bg:#0b1016;--card:#111a23}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.6 "Segoe UI",Arial,sans-serif;display:flex;height:100vh}
+nav{width:250px;flex:none;border-right:1px solid var(--ln);overflow:auto;padding:14px 10px}
+nav a{display:block;color:var(--mu);text-decoration:none;padding:5px 10px;border-radius:7px;font-size:14px}
+nav a:hover{background:#16212c;color:#fff}nav h4{color:var(--pk);font-size:11px;letter-spacing:.12em;margin:14px 10px 4px}
+main{flex:1;overflow:auto;padding:26px 40px 80px;scroll-behavior:smooth}
+h1{color:#fff;font-size:26px;margin:0 0 4px}h2{color:var(--pk);font-size:20px;margin:42px 0 8px;padding-top:8px;border-top:1px solid var(--ln)}
+h3{color:#fff;font-size:16px;margin:20px 0 6px}p{margin:8px 0}.mu{color:var(--mu)}
+code,.k{font-family:Consolas,monospace;background:#1a2632;color:#ffd166;padding:1px 6px;border-radius:5px}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:14px}th,td{border:1px solid var(--ln);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:#142030;color:#fff}
+.say{background:var(--card);border-left:3px solid var(--pk);padding:8px 12px;margin:8px 0;border-radius:6px}
+.say b{color:#7fe9ff}.say i{color:#9dffb0;font-style:normal}
+.box{background:var(--card);border:1px solid var(--ln);border-radius:10px;padding:12px 16px;margin:12px 0}
+.tip{border-color:#2e5b3a}.tip::before{content:"TIP  ";color:#39ff6a;font-weight:700;font-size:12px}
+.warn{border-color:#6b3b20}.warn::before{content:"WATCH OUT  ";color:#ff9f1a;font-weight:700;font-size:12px}
+ol li,ul li{margin:4px 0}.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}
+.flow span{background:#16222e;border:1px solid var(--ln);padding:6px 10px;border-radius:8px;font-size:13px}.flow i{color:var(--pk);font-style:normal}
+</style></head><body>
+<nav>
+<h4>START HERE</h4><a href="#intro">How to use this guide</a><a href="#big">ATC in one page</a><a href="#flight">Life of a flight</a>
+<h4>RADIO</h4><a href="#radio">Talking on the radio</a><a href="#alpha">Letters and numbers</a><a href="#units">Heights, headings, speeds</a>
+<h4>SAFETY</h4><a href="#sep">Separation rules</a><a href="#wake">Wake turbulence</a>
+<h4>POSITIONS</h4><a href="#ground">Ground</a><a href="#tower">Tower</a><a href="#approach">Approach</a><a href="#center">Center</a>
+<h4>NIGHTLOOP</h4><a href="#cmds">Command reference</a><a href="#voice">Voice commands</a><a href="#screens">Screens and tools</a>
+<h4>PRACTICE</h4><a href="#lessons">Lessons 1-10</a><a href="#mistakes">Common mistakes</a><a href="#gloss">Glossary</a>
+</nav>
+<main>
+<h1>Learn Air Traffic Control with NIGHTLOOP</h1>
+<p class="mu">A practical course from your first taxi clearance to running a whole airport. Read a chapter, then try the matching lesson in the simulator.</p>
+
+<h2 id="intro">How to use this guide</h2>
+<p>Each chapter explains one part of ATC in plain words, shows what controllers and pilots actually say, and ends with how to do it in NIGHTLOOP. The <a href="#lessons">lessons</a> at the end build up step by step.</p>
+<div class="box tip">Start with one position. At the top of NIGHTLOOP, under <b>You work</b>, switch on only <b>GND</b> (Ground). The AI controllers handle everything else while you learn. Add TWR, APP and CTR one at a time.</div>
+<div class="box warn">NIGHTLOOP is a training and entertainment simulator. Real ATC follows national rules (FAA, ICAO, CAA) that are more detailed than anything here. Never use this for real-world aviation.</div>
+
+<h2 id="big">ATC in one page</h2>
+<p>Air traffic control keeps aircraft apart and traffic flowing. The sky around an airport is divided into areas, and each area belongs to one controller ("position"). As a flight moves, it is <b>handed off</b> from one controller to the next.</p>
+<table><tr><th>Position</th><th>Where</th><th>Main jobs</th></tr>
+<tr><td><b>Clearance Delivery</b></td><td>at the gate</td><td>Gives the route, first altitude and squawk code before departure.</td></tr>
+<tr><td><b>Ground</b></td><td>aprons and taxiways</td><td>Push back, taxi routes, runway crossings. Never on an active runway without Tower's OK.</td></tr>
+<tr><td><b>Tower</b></td><td>runways and about 5-10 NM around</td><td>Line up, takeoff and landing clearances, spacing on the runway, go-arounds.</td></tr>
+<tr><td><b>Approach / Departure</b></td><td>about 10-40 NM (radar)</td><td>Climbs departures out, brings arrivals down and lines them up on the final approach (vectors, ILS).</td></tr>
+<tr><td><b>Center</b></td><td>en-route, hundreds of NM</td><td>High-level traffic between airports, climbs, descents, direct routings, handoffs.</td></tr></table>
+
+<h2 id="flight">Life of a flight</h2>
+<div class="flow"><span>Gate</span><i>&rarr;</i><span>Ground: push back, taxi</span><i>&rarr;</i><span>Tower: line up, takeoff</span><i>&rarr;</i><span>Departure / Center: climb, cruise</span><i>&rarr;</i><span>Center: descend</span><i>&rarr;</i><span>Approach: vectors, ILS</span><i>&rarr;</i><span>Tower: cleared to land</span><i>&rarr;</i><span>Ground: taxi to gate</span></div>
+<p>In NIGHTLOOP you see exactly this: departures call Ground from a gate, Tower when holding short, then climb away; arrivals call Center, then Approach at 40 NM, Tower at 6 NM final, and Ground after leaving the runway.</p>
+
+<h2 id="radio">Talking on the radio</h2>
+<p>Radio time is precious, so messages follow a fixed order: <b>who you call, who you are, the message</b>. Controllers start with the callsign.</p>
+<div class="say"><b>ATC:</b> United 4527, turn left heading two seven zero, descend and maintain five thousand.<br><i>Pilot:</i> Left heading two seven zero, down to five thousand, United 4527.</div>
+<ul><li><b>Readback:</b> pilots repeat every instruction about headings, altitudes, speeds, runways, hold-short and clearances. The controller must check the readback is correct.</li>
+<li><b>Callsign:</b> airline radio name + flight number ("Speedbird 123" = British Airways 123, "Lufthansa", "American", "Delta"...). NIGHTLOOP shows the ICAO code (BAW123) on the radar but speaks the radio name.</li>
+<li><b>Keep it short:</b> one or two instructions per call is normal; three is the most.</li>
+<li><b>"Say again"</b> = repeat. <b>"Roger"</b> = received. <b>"Wilco"</b> = will comply. <b>"Affirm"</b> = yes. <b>"Negative"</b> = no. <b>"Standby"</b> = wait.</li></ul>
+
+<h2 id="alpha">Letters and numbers</h2>
+<table><tr><th>A</th><td>Alpha</td><th>H</th><td>Hotel</td><th>O</th><td>Oscar</td><th>V</th><td>Victor</td></tr>
+<tr><th>B</th><td>Bravo</td><th>I</th><td>India</td><th>P</th><td>Papa</td><th>W</th><td>Whiskey</td></tr>
+<tr><th>C</th><td>Charlie</td><th>J</th><td>Juliett</td><th>Q</th><td>Quebec</td><th>X</th><td>X-ray</td></tr>
+<tr><th>D</th><td>Delta</td><th>K</th><td>Kilo</td><th>R</th><td>Romeo</td><th>Y</th><td>Yankee</td></tr>
+<tr><th>E</th><td>Echo</td><th>L</th><td>Lima</td><th>S</th><td>Sierra</td><th>Z</th><td>Zulu</td></tr>
+<tr><th>F</th><td>Foxtrot</td><th>M</th><td>Mike</td><th>T</th><td>Tango</td><th></th><td></td></tr>
+<tr><th>G</th><td>Golf</td><th>N</th><td>November</td><th>U</th><td>Uniform</td><th></th><td></td></tr></table>
+<p>Numbers are said digit by digit: 270 = "two seven zero", 4527 = "four five two seven". Nine is "niner" so it is not confused with the German "nein". Taxiways use letters: "taxi via Bravo, Charlie One".</p>
+
+<h2 id="units">Heights, headings, speeds</h2>
+<table><tr><th>What</th><th>How it is said</th><th>NIGHTLOOP command</th></tr>
+<tr><td>Altitude below 18,000 ft (USA transition altitude)</td><td>"five thousand", "one one thousand five hundred"</td><td><code>A050</code> or <code>A5000</code></td></tr>
+<tr><td>Flight level (18,000 ft and above)</td><td>"flight level three five zero" = 35,000 ft</td><td><code>FL350</code></td></tr>
+<tr><td>Heading (compass, degrees)</td><td>"turn left heading two seven zero"</td><td><code>L270</code>, <code>R090</code>, <code>H180</code></td></tr>
+<tr><td>Speed (knots)</td><td>"reduce speed to two one zero"</td><td><code>S210</code>, <code>SR</code> = normal speed</td></tr>
+<tr><td>Runway</td><td>"runway one zero left" (10L, heading about 100°)</td><td><code>ILS 10L</code>, <code>TAXI 10L</code></td></tr></table>
+<p>Runway numbers are the magnetic heading divided by ten. Parallel runways get L, C, R (left, center, right). Each runway has two ends: 10L in one direction is 28R in the other.</p>
+
+<h2 id="sep">Separation rules</h2>
+<p>Separation is the minimum distance between two aircraft. If <b>either</b> the horizontal <b>or</b> the vertical gap is big enough, they are separated.</p>
+<table><tr><th>Where</th><th>Horizontal</th><th>Vertical</th></tr>
+<tr><td>Approach / Tower radar (near the airport)</td><td>3 NM</td><td>1,000 ft</td></tr>
+<tr><td>Center (en-route radar)</td><td>5 NM</td><td>1,000 ft (2,000 ft above FL410)</td></tr>
+<tr><td>Same runway</td><td colspan="2">Only one aircraft on the runway at a time (landing aircraft must have the runway free before it crosses the threshold).</td></tr></table>
+<p>NIGHTLOOP's red <b>conflict bar</b> warns when two AI planes come closer than 3 NM <i>and</i> 1,000 ft, or will within a minute. It explains the conflict and suggests a fix (<b>Fix it</b> button).</p>
+<p>Ways to fix a conflict, in order of preference: <b>altitude</b> (climb one, descend the other), <b>heading</b> (turn one 20-30° away), <b>speed</b> (slow the one behind). The eastbound/westbound rule helps en-route: eastbound flights fly odd thousands (FL330, 350, 370), westbound even (FL340, 360, 380).</p>
+
+<h2 id="wake">Wake turbulence</h2>
+<p>Big aircraft leave strong whirlwinds behind them. A small plane behind a heavy one needs extra space: about 4-6 NM on final, or 2-3 minutes between departures on the same runway. NIGHTLOOP's AI Tower waits 75 s between departures and the AI Approach keeps about 5 NM between arrivals.</p>
+
+<h2 id="ground">Ground control</h2>
+<p>Ground controls everything moving on the taxiways and aprons. Ground never lets a plane onto a runway: crossing a runway needs a clear "cross runway ..." instruction (from Tower in the real world).</p>
+<h3>Typical exchange</h3>
+<div class="say"><i>Pilot:</i> Ground, Cathay 3522, gate F10, ready to push and start.<br><b>GND:</b> Cathay 3522, push back approved.<br><i>Pilot:</i> Push back complete, ready to taxi.<br><b>GND:</b> Cathay 3522, runway one zero left, taxi via Bravo, Charlie One, Alpha, hold short runway one zero center.<br><i>Pilot:</i> (stops before 10C) holding short runway one zero center.<br><b>GND:</b> Cathay 3522, cross runway one zero center.</div>
+<h3>In NIGHTLOOP</h3>
+<ol><li>Open the <b>Ground</b> window (house icon). Planes waiting for you are listed on the right.</li>
+<li><b>Push back</b> button (or type <code>PB</code>), then <b>Taxi</b> (<code>TAXI</code> uses the active runway).</li>
+<li>To choose the route yourself: <b>Route</b> &rarr; click the yellow taxiway names in order &rarr; <b>Send taxi</b>. Or type <code>TAXI 10L VIA B C1 A</code>.</li>
+<li>Planes stop 75 m before runways they must cross; press <b>Cross</b> (<code>CROSS</code>) when no one is landing or taking off there.</li>
+<li><code>HOLD</code> stops a taxiing plane (traffic conflict), <code>CONT</code> continues.</li>
+<li>Arrivals call "clear of runway, request taxi to gate": <b>Taxi to gate</b> (<code>TAXI</code> or <code>TAXI C17</code>).</li></ol>
+<div class="box tip">Look ahead: before crossing, check the Tower list for arrivals within 4 NM of that runway.</div>
+
+<h2 id="tower">Tower</h2>
+<p>Tower owns the runways. Its two key decisions: <b>who may use the runway now</b>, and <b>is it safe</b>.</p>
+<div class="say"><i>Pilot:</i> Tower, Speedbird 123, holding short runway one zero left, ready for departure.<br><b>TWR:</b> Speedbird 123, runway one zero left, line up and wait.<br><b>TWR:</b> Speedbird 123, runway one zero left, cleared for takeoff.<br>...<br><i>Pilot:</i> Tower, American 55, six miles final runway one zero left.<br><b>TWR:</b> American 55, runway one zero left, cleared to land.</div>
+<ul><li>Never clear a takeoff if an arrival is closer than about 3-4 NM, or the runway is occupied.</li>
+<li>Give the landing clearance by 2 NM final. A plane without clearance <b>goes around</b> (climbs away and comes back).</li>
+<li>Go-around: <code>GA</code> - use it when the runway will not be free in time.</li></ul>
+<h3>In NIGHTLOOP</h3>
+<p>Tower window: departures waiting and arrivals on approach are listed with buttons. Commands: <code>LUAW</code> (line up and wait), <code>CTO</code> (cleared for takeoff, optionally <code>CTO H250 A050</code> for a heading and altitude after takeoff), <code>CL</code> (cleared to land), <code>GA</code> (go around). The runway status line tells you which runway is occupied.</p>
+
+<h2 id="approach">Approach</h2>
+<p>Approach turns a stream of arrivals from all directions into a neat line on the final approach, about 5 NM apart, ending on the ILS (a radio beam that guides the plane to the runway).</p>
+<h3>The classic pattern</h3>
+<p><b>Downwind</b> (flying opposite to the landing direction, beside the airport) &rarr; <b>base</b> (turn 90°) &rarr; <b>intercept</b> (about 30° to the final course) &rarr; <b>established</b> on the localizer &rarr; descend on the glide slope.</p>
+<div class="say"><b>APP:</b> Delta 12, turn left heading one two zero, descend and maintain three thousand.<br><b>APP:</b> Delta 12, turn right heading zero seven zero, maintain three thousand until established, cleared ILS runway one zero left approach.<br><b>APP:</b> Delta 12, contact Tower.</div>
+<ul><li>Intercept angle: 30° or less, at least 2 NM before the final approach fix (about 8-10 NM from the runway).</li>
+<li>Typical altitudes: 3,000 ft above the airport at 10 NM; speed 210 kt on downwind, 180 on base, 170 to the final fix.</li>
+<li>Spacing: use speed first (<code>S170</code>), then a wider turn, then a 360 if needed.</li></ul>
+<h3>In NIGHTLOOP</h3>
+<p>Switch on <b>APP</b> under "You work". Arrivals call at 40 NM and hold at 18 NM if you ignore them. Give headings (<code>L120</code>), altitudes (<code>A030</code>), then <code>ILS 10L</code> (they intercept by themselves when the angle is 30° or less). The Approach window shows the 40 NM zone, range rings and dashed extended centerlines of the active runways.</p>
+
+<h2 id="center">Center</h2>
+<p>Center works high-altitude traffic over large areas: climbing departures to cruise, keeping crossing traffic apart, descending arrivals in time and handing them to Approach.</p>
+<div class="say"><i>Pilot:</i> Center, Lufthansa 4283, flight level three five zero.<br><b>CTR:</b> Lufthansa 4283, descend and maintain flight level two four zero.<br><b>CTR:</b> Lufthansa 4283, proceed direct Oscar Bravo Kilo, contact Chicago Approach.</div>
+<ul><li>Start descents about 100-120 NM out (3 NM per 1,000 ft is a good rule).</li>
+<li>Hand arrivals to Approach below about FL110 and before 40 NM: <code>HO</code>.</li>
+<li><code>D OBK</code> sends a plane direct to a radio beacon or airport.</li></ul>
+
+<h2 id="cmds">NIGHTLOOP command reference</h2>
+<p>Select a plane (click it), then type in the comms box, or start with the callsign: <code>UAL4527 L270 A050</code>.</p>
+<table><tr><th>Command</th><th>Meaning</th></tr>
+<tr><td><code>H270</code> <code>L270</code> <code>R270</code></td><td>Fly heading 270 (shortest turn / turn left / turn right)</td></tr>
+<tr><td><code>A050</code> <code>A5000</code> <code>FL350</code></td><td>Climb or descend to 5,000 ft / flight level 350</td></tr>
+<tr><td><code>S210</code> <code>SR</code></td><td>Speed 210 kt / resume normal speed</td></tr>
+<tr><td><code>D KORD</code> <code>D OBK</code></td><td>Proceed direct to an airport or radio beacon</td></tr>
+<tr><td><code>ILS 10L</code></td><td>Cleared ILS approach runway 10L</td></tr>
+<tr><td><code>RON</code></td><td>Resume own navigation (fly the flight plan)</td></tr>
+<tr><td><code>HO</code></td><td>Hand off (to Approach for arrivals, next Center for others)</td></tr>
+<tr><td><code>LUAW</code> <code>CTO</code> <code>CL</code> <code>GA</code></td><td>Line up and wait / cleared for takeoff / cleared to land / go around</td></tr>
+<tr><td><code>PB</code> <code>TAXI</code> <code>TAXI 10L VIA B A</code> <code>TAXI C17</code></td><td>Push back / taxi (runway or gate, optional route)</td></tr>
+<tr><td><code>HOLD</code> <code>CONT</code> <code>CROSS</code></td><td>Hold position / continue taxi / cross the runway ahead</td></tr></table>
+
+<h2 id="voice">Voice commands</h2>
+<p>Hold the push-to-talk key (<span class="k">`</span> by default, or the mic button, a mouse side button, a joystick button or the headset button - Settings &gt; Voice) and speak like a controller:</p>
+<div class="say"><b>You:</b> "United four five two seven, turn left heading two seven zero, descend and maintain five thousand"</div>
+<ul><li>Say numbers digit by digit, letters with the alphabet ("Oscar Bravo Kilo").</li>
+<li>Without a callsign the command goes to the selected plane.</li>
+<li>The comms log shows what was heard and the command it became. If it misheard, just say it again a bit slower.</li>
+<li>Settings &gt; Voice &gt; <b>Test microphone</b> checks your microphone.</li></ul>
+
+<h2 id="screens">Screens and tools</h2>
+<ul><li><b>Left bar:</b> World, Center, Approach, Ground, Tower windows; this guide (book icon).</li>
+<li><b>Windows 1-4:</b> split the screen; each window's header menu chooses its task; the square button opens a window on its own (second monitor).</li>
+<li><b>Data blocks:</b> callsign, then flight level (e.g. 350 = FL350), climb/descent arrow, speed/10, aircraft type; a third line shows your last instruction.</li>
+<li><b>Colours:</b> green AI (controllable), cyan VATSIM, amber IVAO, magenta real-world ADS-B (watch only; use <b>Shadow</b> to make a controllable copy).</li>
+<li><b>Settings &gt; Updates &gt; Update all data</b> downloads airports, maps and traffic again.</li></ul>
+
+<h2 id="lessons">Practice lessons</h2>
+<div class="box"><h3>Lesson 1 - Your first pushback and taxi</h3><p>You work: GND only. Open Ground. Push back the first plane, then Taxi. Watch it reach the runway and Tower (AI) take over.</p></div>
+<div class="box"><h3>Lesson 2 - Choose the taxi route</h3><p>Use Route and click the taxiways yourself. Try a route that crosses a runway; press Cross only when the runway is clear.</p></div>
+<div class="box"><h3>Lesson 3 - A busy ramp</h3><p>Handle four departures at once. Use HOLD to stop one plane so another can pass.</p></div>
+<div class="box"><h3>Lesson 4 - Tower departures</h3><p>You work: TWR (Ground on AI). Line up and clear departures with 75 s or more between them.</p></div>
+<div class="box"><h3>Lesson 5 - Mixing arrivals and departures</h3><p>Clear departures between arrivals: only when the next arrival is more than 4 NM out. Clear every arrival to land by 2 NM.</p></div>
+<div class="box"><h3>Lesson 6 - Your first vectors</h3><p>You work: APP. Take one arrival: heading to downwind, descend to 3,000 ft, base turn, intercept heading 30° to final, ILS clearance.</p></div>
+<div class="box"><h3>Lesson 7 - Spacing</h3><p>Two arrivals at once: keep 5 NM between them using speed (S170) and a longer downwind.</p></div>
+<div class="box"><h3>Lesson 8 - Center descents</h3><p>You work: CTR. Descend arrivals early enough to be below FL110 at 40 NM, then hand off (HO).</p></div>
+<div class="box"><h3>Lesson 9 - Fixing conflicts</h3><p>When the red bar appears, read it, decide your own fix before pressing Fix it, then compare.</p></div>
+<div class="box"><h3>Lesson 10 - The whole airport</h3><p>Turn on all four positions. Raise AI flights to 400 and the home share to 25 % in Settings &gt; AI for a real rush.</p></div>
+
+<h2 id="mistakes">Common mistakes</h2>
+<ul><li>Forgetting the landing clearance - the plane goes around. Watch the "6 miles final" calls.</li>
+<li>Intercepting the localizer at more than 30° - the plane flies through it.</li>
+<li>Descending too late - arrivals arrive too high for the approach.</li>
+<li>Crossing a runway with an arrival on short final.</li>
+<li>Giving too many instructions in one call.</li></ul>
+
+<h2 id="gloss">Glossary</h2>
+<table>
+<tr><td><b>ADS-B</b></td><td>Aircraft broadcast their own GPS position; used for the real-world traffic.</td></tr>
+<tr><td><b>Apron / ramp</b></td><td>Parking area with gates and stands.</td></tr>
+<tr><td><b>Established</b></td><td>Flying exactly on the final approach course.</td></tr>
+<tr><td><b>FAF</b></td><td>Final approach fix, where the final descent starts (about 5-6 NM out).</td></tr>
+<tr><td><b>Go-around</b></td><td>Aborted landing: climb away and try again.</td></tr>
+<tr><td><b>Handoff</b></td><td>Passing a flight to the next controller.</td></tr>
+<tr><td><b>Hold short</b></td><td>Stop before a runway (red bars on the map).</td></tr>
+<tr><td><b>ILS</b></td><td>Instrument Landing System: localizer (left/right) + glide slope (up/down).</td></tr>
+<tr><td><b>NM</b></td><td>Nautical mile = 1.852 km.</td></tr>
+<tr><td><b>Squawk</b></td><td>4-digit transponder code. 7500 hijack, 7600 radio failure, 7700 emergency.</td></tr>
+<tr><td><b>Vectors</b></td><td>Headings given by the controller instead of the planned route.</td></tr>
+</table>
+<p class="mu" style="margin-top:40px">NIGHTLOOP training guide - for simulation only.</p>
+</main></body></html>

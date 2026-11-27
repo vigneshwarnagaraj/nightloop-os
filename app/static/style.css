@@ -269,3 +269,12 @@ body.open #card { left: calc(var(--rail) + 350px); }
 
 .mlev { display: inline-block; width: 140px; height: 10px; border-radius: 5px; background: rgba(255,255,255,.08); overflow: hidden; vertical-align: middle; margin-left: 8px; }
 .mlev i { display: block; height: 100%; width: 0; background: #39ff6a; transition: width .12s; }
+
+/* v1.5 realistic airport, learn */
+.pane.diagram.real .pmap { background: #42613a; }
+.rsep { flex: 1; }
+#learn { position: fixed; inset: 0; z-index: 3500; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; }
+#learn .lbox { width: min(1100px, 94vw); height: 90vh; background: #0b1016; border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; overflow: hidden; }
+#learn .lhd { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+#learn .lhd b { color: #f0479a; letter-spacing: .1em; }
+#learn iframe { flex: 1; border: 0; background: #0b1016; }
