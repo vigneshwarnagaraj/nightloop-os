@@ -266,3 +266,6 @@ body.open #card { left: calc(var(--rail) + 350px); }
 #boot .bdots i:nth-child(4) { animation-delay: .45s; } #boot .bdots i:nth-child(5) { animation-delay: .6s; }
 @keyframes bd { 0%, 100% { opacity: .2; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.1); } }
 #boot.gone { opacity: 0; pointer-events: none; }
+
+.mlev { display: inline-block; width: 140px; height: 10px; border-radius: 5px; background: rgba(255,255,255,.08); overflow: hidden; vertical-align: middle; margin-left: 8px; }
+.mlev i { display: block; height: 100%; width: 0; background: #39ff6a; transition: width .12s; }

@@ -136,6 +136,7 @@
     <label><input type="checkbox" data-opt="comms"> Comms window (radio log and command line)</label>
     <label><input type="checkbox" data-opt="stca"> Conflict alerts for AI planes (less than 3 NM and 1,000 ft)</label>
     <label><input type="checkbox" data-opt="gndDiagram"> Ground window: airport diagram (taxiways, aprons, buildings) instead of a map</label>
+    <label><input type="checkbox" data-opt="twrChart"> Tower window: airport chart too (like the Ground window)</label>
     <label class="sel">Airport diagram colours <select data-opt="gndTheme"><option value="chart">Airport chart (light green)</option><option value="radar">Ground radar (dark)</option></select></label>
     <label><input type="checkbox" data-opt="showAiComms"> Show radio calls of the AI controllers (grey)</label>
     <div class="muted">Range rings and the recommended zone are shown only in the Approach and Tower windows.</div>
@@ -151,6 +152,11 @@
     <label class="sel">Speech engine <select data-opt="voiceEngine"><option value="auto">Automatic</option><option value="offline">Offline (built in, no internet)</option><option value="browser">Browser (Chrome / Edge, needs internet)</option></select></label>
     <div class="muted" id="voiceEngineInfo"></div>
     <div class="crow"><button id="voiceInstall" hidden>Install offline voice (40 MB download)</button></div>
+    <div id="micRow" hidden>
+      <label class="sel">Microphone <select id="voiceMic"></select></label>
+      <div class="crow"><button id="micTest">Test microphone</button><span class="mlev"><i id="micLevel"></i></span></div>
+      <div class="muted" id="micTestMsg"></div>
+    </div>
     <label><input type="checkbox" data-opt="voiceOut"> Speak pilot replies</label>
     <label class="sel">Speech speed <select data-opt="voiceRate"><option value="0.9">Slow</option><option value="1.1">Normal</option><option value="1.3">Fast</option></select></label>
     <div class="crow"><button id="voiceTest">Test pilot voice</button></div>

@@ -1,7 +1,7 @@
 'use strict';
 // NIGHTLOOP - V1 browser prototype (v0.7): multi-window layout, task windows (World / Approach / Tower),
 // traffic drawing, settings, search, comms, conflict alerts.
-const APP_VERSION = '1.3';
+const APP_VERSION = '1.4';
 
 const COLORS = { ai: '#39ff6a', vatsim: '#00d9ff', ivao: '#ffb300', real: '#ff3df2' };
 const NAMES = { ai: 'AI planes', vatsim: 'VATSIM', ivao: 'IVAO', real: 'Real world (ADS-B)' };
@@ -15,6 +15,7 @@ const KINDS = {
   center: { title: 'CENTER', zone: 200, zoom: 6.4, rings: 50, label: 'CENTER SECTOR' },
   ground: { title: 'GROUND', zone: 2.5, zoom: 14.3, rings: 1, label: 'GROUND AREA' },
 };
+const chartKind = (k) => S.gndDiagram && (k === 'ground' || (k === 'tower' && S.twrChart));   // airport-chart windows
 const D2R = Math.PI / 180, R_NM = 3440.065;
 const $ = (id) => document.getElementById(id);
 const wrap = (x) => ((((x + 180) % 360) + 360) % 360) - 180;
@@ -25,7 +26,7 @@ const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const params = new URLSearchParams(location.search);
 const SOLO = KINDS[params.get('solo')] ? params.get('solo') : null;      // a popped-out window shows one task only
 const DEFAULTS = { style: 'darktest', placeLabels: false, grid: 'tl', labels: true, trails: true, vectors: true,
-  airports: true, runways: true, apLabels: 'full', rate: '1000', statusbar: true, cat: 'general', comms: true, stca: true, voiceIn: true, pttKey: 'Backquote', pttName: '`', pttMode: 'hold', pttHeadset: false, pttGamepad: false, voiceEngine: 'auto', voiceOut: true, voiceRate: '1.1', gndDiagram: true, gndTheme: 'chart', showAiComms: true,
+  airports: true, runways: true, apLabels: 'full', rate: '1000', statusbar: true, cat: 'general', comms: true, stca: true, voiceIn: true, pttKey: 'Backquote', pttName: '`', pttMode: 'hold', pttHeadset: false, pttGamepad: false, voiceEngine: 'auto', voiceOut: true, voiceRate: '1.1', gndDiagram: true, gndTheme: 'chart', twrChart: true, showAiComms: true,
   clock24: 'true', tz: 'system', showUtc: false, showSeconds: true, layout: 1, panes: ['world', 'approach', 'tower', 'world'] };
 const S = { ...DEFAULTS };
 try { Object.assign(S, JSON.parse(localStorage.getItem('nightloop.settings') || '{}')); } catch (e) { /* ignore */ }
@@ -114,7 +115,7 @@ class View {
   constructor(kind, el, idx) {
     this.kind = kind; this.el = el; this.idx = idx; this.cfg = KINDS[kind];
     this.airports = []; this.runways = []; this.navaids = []; this.screenPts = []; this.apPts = []; this.ap = null;
-    el.className = 'pane' + (kind === 'ground' && S.gndDiagram ? ' diagram' + (S.gndTheme === 'chart' ? ' chart' : '') : '');
+    el.className = 'pane' + (chartKind(kind) ? ' diagram' + (S.gndTheme === 'chart' ? ' chart' : '') : '');
     const kindSel = SOLO ? '' : `<select class="pkind" title="Change what this window shows">${Object.keys(KINDS).map((k) => `<option value="${k}"${k === kind ? ' selected' : ''}>${KINDS[k].title}</option>`).join('')}</select>`;
     el.innerHTML = `<div class="phd">${kindSel}<span class="ptitle">${kindSel ? '' : this.cfg.title}<em></em></span>` +
       (kind !== 'world' ? '<input class="pap" placeholder="Airport" maxlength="4" title="Type an airport (ICAO) and press Enter to move this task there">' : '') +
@@ -155,7 +156,7 @@ class View {
   applyStyle() {
     if (this.base) { this.map.removeLayer(this.base); this.base = null; }
     if (this.place) { this.map.removeLayer(this.place); this.place = null; }
-    if (this.kind === 'ground' && S.gndDiagram) return;       // airport diagram drawn by NIGHTLOOP, no map tiles
+    if (chartKind(this.kind)) return;       // airport diagram drawn by NIGHTLOOP, no map tiles
     if (!STYLE_MAKERS[S.style]) S.style = 'darktest';
     try { this.base = STYLE_MAKERS[S.style](); this.base.addTo(this.map); }
     catch (e) { console.error('Map style failed', e); this.base = STYLE_MAKERS.street(); this.base.addTo(this.map); }
@@ -280,7 +281,7 @@ function setPaneKind(idx, kind) {   // split mode: change one window with its he
   old.destroy(); old.el.replaceWith(el);
   views[idx] = new View(kind, el, idx);
   S.panes[idx] = kind; saveS();
-  if (kind === 'ground') loadDiagram(true);
+  if (chartKind(kind)) loadDiagram(true);
   setFocus(views[idx]);
   setTimeout(() => { views[idx].map.invalidateSize(); views[idx].fitMin(); }, 50);
   if (towerData) renderTower(towerData);
@@ -327,7 +328,7 @@ document.querySelectorAll('[data-opt]').forEach((el) => {
     if (k === 'airports') views.forEach((v) => v.loadAirports());
     if (k === 'comms') $('comms').hidden = !S.comms;
     if (k === 'tz' || k === 'clock24') updateClockZone();
-    if (k === 'gndDiagram' || k === 'gndTheme') buildLayout();
+    if (k === 'gndDiagram' || k === 'gndTheme' || k === 'twrChart') buildLayout();
     if (k === 'pttHeadset' && S.pttHeadset) armHeadset();
     if (k === 'voiceEngine') loadVoiceLocal();
   });
@@ -570,7 +571,7 @@ function label(text, x, y, color, halo) {
   ctx.fillStyle = color; ctx.fillText(text, x, y);
 }
 function drawGrid(s, z, light) {
-  if (S.grid === 'off' || (V.kind === 'ground' && S.gndDiagram)) return;
+  if (S.grid === 'off' || chartKind(V.kind)) return;
   const st = z < 3 ? 30 : z < 4 ? 20 : z < 5 ? 10 : z < 6 ? 5 : z < 7 ? 2 : z < 8.5 ? 1 : z < 10 ? 0.5 : z < 12 ? 0.25 : 0.1;
   const b = map.getBounds(), clat = map.getCenter().lat;
   const lineC = light ? 'rgba(20,35,50,0.45)' : 'rgba(170,205,225,0.32)';
@@ -635,7 +636,7 @@ function drawAirports(s, z, light) {
         const ids = [r[4], r[5]];
         if (ids.includes(tw.arr_rwy)) { col = '#39ff6a'; act = true; } else if (ids.includes(tw.dep_rwy)) { col = '#00d9ff'; act = true; }
       }
-      const diag = V.kind === 'ground' && S.gndDiagram && groundDiagram;
+      const diag = chartKind(V.kind) && groundDiagram;
       if (diag && !act) continue;
       if (diag) { ctx.globalAlpha = 0.45; }
       if (act && !diag) { ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = rw + 4; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
@@ -671,7 +672,7 @@ function drawAirports(s, z, light) {
     ctx.strokeStyle = light ? '#33424d' : (big ? '#c9dbe6' : '#8ea6b4'); ctx.fillStyle = light ? 'rgba(40,60,70,0.25)' : 'rgba(160,190,200,0.25)';
     ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     V.apPts.push([p.x, p.y, a]);
-    if (V.kind === 'ground' && S.gndDiagram) continue;
+    if (chartKind(V.kind)) continue;
     if (S.apLabels === 'off' || (!big && !med && z < 9.5)) continue;
     const full = S.apLabels === 'full' && (z >= 7 || (big && z >= 5));
     const txt = full ? `${a.code}  ${a.name}` : a.code;
@@ -719,7 +720,7 @@ async function loadDiagram(force) {
   } catch (e) { /* ignore */ }
 }
 function drawDiagram(s, z) {
-  if (!groundDiagram || V.kind !== 'ground' || !S.gndDiagram) return;
+  if (!groundDiagram || !chartKind(V.kind)) return;
   const sc = 2 ** (z - 20), tl = map.project(map.containerPointToLatLng([0, 0]), z);
   const mpp = 40075016.7 * Math.cos(map.getCenter().lat * D2R) / (256 * 2 ** z);
   const path = (a, close) => {
@@ -896,8 +897,8 @@ function drawView(v, now) {
   const cv = v.radar._container;
   if (!cv || !v.radar._bounds || v.radar._scaled || v.map._animatingZoom) return 0;
   V = v; map = v.map; ctx = v.ctx;
-  const chart = v.kind === 'ground' && S.gndDiagram && S.gndTheme === 'chart';
-  const s = map.getSize(), z = map.getZoom(), light = chart || (LIGHT_STYLES.has(S.style) && !(v.kind === 'ground' && S.gndDiagram));
+  const chart = chartKind(v.kind) && S.gndTheme === 'chart';
+  const s = map.getSize(), z = map.getZoom(), light = chart || (LIGHT_STYLES.has(S.style) && !chartKind(v.kind));
   DPR = window.devicePixelRatio || 1;
   const off = map.containerPointToLayerPoint([0, 0]).subtract(v.radar._bounds.min);
   OX = off.x; OY = off.y; CL = map.getCenter().lng;
@@ -1386,7 +1387,7 @@ function renderGround(d) {
 }
 async function pollGround() {
   clearTimeout(groundTimer);
-  try { groundData = await (await fetch('/api/ground')).json(); renderGround(groundData); if (groundData.state === 'ready' && views.some((v) => v.kind === 'ground')) loadDiagram(false); } catch (e) { /* ignore */ }
+  try { groundData = await (await fetch('/api/ground')).json(); renderGround(groundData); if (groundData.state === 'ready' && views.some((v) => chartKind(v.kind))) loadDiagram(false); } catch (e) { /* ignore */ }
   groundTimer = setTimeout(pollGround, 2000);
 }
 
@@ -1409,7 +1410,16 @@ async function loadVoiceLocal() {
   el.textContent = `In use: ${eng}.` + (VL ? (VL.available ? ` Microphone: ${VL.mics[0] || '-'}` : VL.engine ? (VL.model ? ` Offline engine: ${VL.message || 'no microphone found'}` : ' Offline voice not installed yet.') : '') : '') +
     (VL && VL.installing ? ' Downloading...' : '');
   $('voiceInstall').hidden = !(VL && VL.engine && !VL.model);
+  paintMics();
+  $('micRow').hidden = !(VL && VL.engine);
   if (VL && VL.installing) setTimeout(loadVoiceLocal, 3000);
+}
+function paintMics() {
+  const sel = $('voiceMic');
+  if (!sel || !VL) return;
+  const opts = '<option value="default">Windows default microphone</option>' + (VL.mics || []).map((m) => `<option value="${m.i}">${esc(m.name)}${m.default ? ' (default)' : ''}</option>`).join('');
+  if (sel.dataset.o !== opts) { sel.innerHTML = opts; sel.dataset.o = opts; }
+  sel.value = VL.mic == null ? 'default' : String(VL.mic);
 }
 function useLocal() {
   if (!VL || !VL.available) return false;
@@ -1428,6 +1438,7 @@ async function startLocal() {
     try {
       const d = await (await fetch('/api/voice/local/partial')).json();
       $('cmd').value = d.text;
+      $('micBtn').style.background = `linear-gradient(to top, #39ff6a ${d.level}%, #e0245e ${d.level}%)`;
       if (d.text !== vlLast) { vlLast = d.text; vlSince = performance.now(); }
       if (S.pttMode === 'toggle' && ((vlLast && performance.now() - vlSince > 1600) || performance.now() - t0 > 12000)) stopLocal();
     } catch (e) { /* ignore */ }
@@ -1435,6 +1446,7 @@ async function startLocal() {
 }
 async function stopLocal() {
   clearInterval(vlTimer);
+  $('micBtn').style.background = '';
   if (!listening) return;
   micState(false, 'Type a command, e.g. H270 A050 S210');
   $('cmd').value = '';
@@ -1559,6 +1571,21 @@ function speak(who, text) {
   speechSynthesis.speak(u);
 }
 $('voiceTest').onclick = () => speak('TEST123', 'Tower, Speedbird 123, holding short runway 10 left, ready for departure');
+$('voiceMic').onchange = async () => { await post('/api/voice/mic', { index: $('voiceMic').value }); loadVoiceLocal(); };
+$('micTest').onclick = async () => {
+  const msg = $('micTestMsg'), bar = $('micLevel');
+  try { const r = await post('/api/voice/local/start', {}); if (!r.ok) { msg.textContent = r.message; return; } } catch (e) { msg.textContent = 'Not available'; return; }
+  msg.textContent = 'Speak now for 4 seconds...';
+  const iv = setInterval(async () => { try { const d = await (await fetch('/api/voice/local/partial')).json(); bar.style.width = d.level + '%'; } catch (e) { /* ignore */ } }, 150);
+  setTimeout(async () => {
+    clearInterval(iv); bar.style.width = '0%';
+    try {
+      const d = await post('/api/voice/local/stop', { test: true });
+      msg.textContent = d.peak < 300 ? `No sound from '${d.mic}'. Choose another microphone above, or turn on "Let desktop apps access your microphone" in Windows Settings > Privacy & security > Microphone.`
+        : `Microphone '${d.mic}' works (level ${Math.min(100, Math.round(d.peak / 120))}%).` + (d.text ? ` Heard: "${d.text}"` : ' No words recognised - try a full command.');
+    } catch (e) { msg.textContent = 'Test failed'; }
+  }, 4000);
+};
 $('voiceInstall').onclick = async () => { try { await post('/api/voice/local/install', {}); } catch (e) { /* ignore */ } setTimeout(loadVoiceLocal, 800); };
 loadVoiceLocal();
 

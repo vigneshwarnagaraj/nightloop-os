@@ -16,7 +16,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import urllib.parse
 from urllib.parse import parse_qs, urlparse
 
-APP, VERSION = "NIGHTLOOP", "1.3"
+APP, VERSION = "NIGHTLOOP", "1.4"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(ROOT, "static")
 DATA = os.path.join(ROOT, "data")
@@ -1791,6 +1791,8 @@ def api_command(body):
 GND = {"icao": None, "state": "idle", "note": "", "g": None, "src": ""}
 GND_LOCK = threading.Lock()
 OVERPASS = "https://overpass-api.de/api/interpreter"
+OVERPASS_MIRRORS = [OVERPASS, "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter",
+                    "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]
 TAXI_KT, PUSH_KT = 18.0, 3.0
 
 
@@ -1828,13 +1830,25 @@ def gnd_load(tw, force=False):
                 old_v = 0
         if force or not os.path.exists(path) or old_v < 2 or time.time() - os.path.getmtime(path) > 30 * 86400:
             log(f"Ground: downloading taxiways and gates for {code} from OpenStreetMap...")
-            q = (f'[out:json][timeout:120];(way["aeroway"~"^(taxiway|taxilane|runway|apron|terminal|hangar|parking_position)$"](around:5000,{tw["lat"]},{tw["lon"]});'
+            q = (f'[out:json][timeout:180];(way["aeroway"~"^(taxiway|taxilane|runway|apron|terminal|hangar|parking_position)$"](around:5000,{tw["lat"]},{tw["lon"]});'
                  f'node["aeroway"~"^(gate|parking_position|holding_position)$"](around:5000,{tw["lat"]},{tw["lon"]});'
                  f'way["building"]["aeroway"](around:5000,{tw["lat"]},{tw["lon"]}););out body;>;out skel qt;')
-            req = urllib.request.Request(OVERPASS, data=urllib.parse.urlencode({"data": q}).encode(),
-                                         headers={"User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded"})
-            with urllib.request.urlopen(req, timeout=150) as r:
-                blob = r.read()
+            blob, errs = None, []
+            for url_ in OVERPASS_MIRRORS:                      # try several OpenStreetMap servers (they are often busy)
+                try:
+                    req = urllib.request.Request(url_, data=urllib.parse.urlencode({"data": q}).encode(),
+                                                 headers={"User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded"})
+                    with urllib.request.urlopen(req, timeout=200) as r:
+                        blob = r.read()
+                    if b'"elements"' not in blob[:4000]:
+                        raise ValueError("busy")
+                    log(f"Ground: airport map from {url_.split('/')[2]}")
+                    break
+                except Exception as e_:
+                    errs.append(f"{url_.split('/')[2]}: {str(e_)[:60]}")
+                    blob = None
+            if blob is None:
+                raise RuntimeError("; ".join(errs))
             osm_ = json.loads(blob)
             osm_["nl_v"] = 2
             with open(path + ".tmp", "w", encoding="utf-8") as f:
@@ -1850,7 +1864,8 @@ def gnd_load(tw, force=False):
             try:
                 with open(path, encoding="utf-8") as f:
                     g = gnd_build(json.load(f), tw)
-                note = "Could not refresh the airport diagram (offline?) - using the saved taxiways"
+                note = "Airport map servers were busy - using the saved taxiways (aprons/buildings missing). Try 'Reload taxiways' later."
+                log(f"Ground: download failed: {e}")
             except Exception:
                 g = None
     if not g:
@@ -2599,15 +2614,42 @@ def voice_local_info(q=None):
     except Exception as e:
         lib, VLOCAL["msg"] = False, f"speech engine not included ({str(e)[:60]})"
     try:
-        import sounddevice
-        mics = [d["name"] for d in sounddevice.query_devices() if d.get("max_input_channels", 0) > 0]
+        mics = list_mics()
     except Exception as e:
         mics = []
         if lib:
             VLOCAL["msg"] = f"no microphone access ({str(e)[:60]})"
     model = os.path.exists(os.path.join(vosk_dir(), "am")) or os.path.exists(os.path.join(vosk_dir(), "conf"))
-    return {"engine": lib, "model": model, "mics": mics[:8], "available": lib and model and bool(mics),
+    return {"engine": lib, "model": model, "mics": mics[:12], "mic": CFG.get("voice_mic"), "available": lib and model and bool(mics),
             "installing": VLOCAL["installing"], "message": VLOCAL["msg"], "listening": VLOCAL["stream"] is not None}
+
+
+def list_mics():
+    """Input devices of the main sound system (each microphone once)."""
+    import sounddevice as sd
+    devs = sd.query_devices()
+    try:
+        api = sd.default.hostapi if not isinstance(sd.default.hostapi, (list, tuple)) else sd.default.hostapi[0]
+    except Exception:
+        api = 0
+    try:
+        dflt = sd.default.device[0]
+    except Exception:
+        dflt = -1
+    out = []
+    for i, d in enumerate(devs):
+        if d.get("max_input_channels", 0) > 0 and (d.get("hostapi") == api or IS_PI):
+            n = d["name"]
+            if re.search(r"stereo mix|what u hear|loopback|sound mapper|primary sound capture", n, re.I):
+                continue
+            out.append({"i": i, "name": n, "default": i == dflt})
+    return out
+
+
+def set_mic(body):
+    CFG["voice_mic"] = None if body.get("index") in (None, "", "default") else int(body["index"])
+    save_config()
+    return {"ok": True, "mic": CFG["voice_mic"]}, 200
 
 
 def voice_local_install(body):
@@ -2662,14 +2704,26 @@ def voice_local_start(body):
         if VLOCAL["model"] is None:
             vosk.SetLogLevel(-1)
             VLOCAL["model"] = vosk.Model(vosk_dir())
-        rec = vosk.KaldiRecognizer(VLOCAL["model"], 16000, voice_grammar())
+        dev = CFG.get("voice_mic")
+        try:
+            info = sounddevice.query_devices(dev if dev is not None else None, "input")
+        except Exception:
+            dev, info = None, sounddevice.query_devices(None, "input")
+        rate = int(info.get("default_samplerate") or 16000)
+        rec = vosk.KaldiRecognizer(VLOCAL["model"], rate, voice_grammar())
         rec.SetMaxAlternatives(3)
-        VLOCAL.update(rec=rec, partial="", finals=[])
+        VLOCAL.update(rec=rec, partial="", finals=[], peak=0, level=0, dev_name=info.get("name", "?"))
 
         def cb(indata, frames, t, status):
             r = VLOCAL["rec"]
             if r is None:
                 return
+            import array
+            a = array.array("h", bytes(indata))
+            if a:
+                pk = max(abs(min(a)), abs(max(a)))
+                VLOCAL["peak"] = max(VLOCAL.get("peak", 0), pk)
+                VLOCAL["level"] = min(100, int(pk * 100 / 12000))
             if r.AcceptWaveform(bytes(indata)):
                 res = json.loads(r.Result())
                 alts = res.get("alternatives") or [{"text": res.get("text", "")}]
@@ -2677,15 +2731,20 @@ def voice_local_start(body):
                     VLOCAL["finals"].append(alts)
             else:
                 VLOCAL["partial"] = json.loads(r.PartialResult()).get("partial", "")
-        st = sounddevice.RawInputStream(samplerate=16000, blocksize=4000, dtype="int16", channels=1, callback=cb)
-        st.start()
+        try:
+            st = sounddevice.RawInputStream(samplerate=rate, blocksize=int(rate / 4), dtype="int16", channels=1, device=dev, callback=cb)
+            st.start()
+        except Exception as e:
+            VLOCAL.update(rec=None)
+            return {"ok": False, "message": f"Could not open the microphone '{info.get('name', '?')}': {str(e)[:80]}. Choose another one in Settings > Voice."}, 400
         VLOCAL["stream"] = st
     return {"ok": True}, 200
 
 
 def voice_local_partial(q):
     heard = " ".join(a[0]["text"] for a in VLOCAL.get("finals", []))
-    return {"text": (heard + " " + VLOCAL.get("partial", "")).strip(), "listening": VLOCAL["stream"] is not None}
+    return {"text": (heard + " " + VLOCAL.get("partial", "")).strip(), "listening": VLOCAL["stream"] is not None,
+            "level": VLOCAL.get("level", 0), "mic": VLOCAL.get("dev_name", "")}
 
 
 def voice_local_stop(body):
@@ -2701,9 +2760,16 @@ def voice_local_stop(body):
         res = json.loads(rec.FinalResult())
         alts = res.get("alternatives") or [{"text": res.get("text", "")}]
         finals = VLOCAL.get("finals", []) + ([alts] if alts and alts[0].get("text") else [])
+        peak, mic = VLOCAL.get("peak", 0), VLOCAL.get("dev_name", "?")
         VLOCAL.update(rec=None, partial="", finals=[])
+    finals = [f for f in finals if f[0]["text"].strip() not in ("", "[unk]")]
+    if body.get("test"):
+        return {"ok": True, "peak": peak, "mic": mic, "text": " ".join(f[0]["text"] for f in finals)}, 200
     if not finals:
-        return {"ok": False, "message": "Nothing heard"}, 400
+        if peak < 300:
+            return {"ok": False, "message": f"The microphone '{mic}' gave no sound. Choose your microphone in Settings > Voice (Test microphone), "
+                                            "and in Windows Settings > Privacy & security > Microphone turn on 'Let desktop apps access your microphone'."}, 400
+        return {"ok": False, "message": "Heard sound but no words I know - speak a bit slower, e.g. 'United 4527, turn left heading two seven zero'."}, 400
     first = " ".join(f[0]["text"] for f in finals)
     options = [first]
     if len(finals) == 1:
@@ -3363,7 +3429,7 @@ class Handler(SimpleHTTPRequestHandler):
                   "/api/system/wifi": wifi_connect, "/api/system/power": power, "/api/system/osupdate": os_update,
                   "/api/update/pull": update_pull, "/api/ground/preview": api_ground_preview,
                   "/api/voice/local/install": voice_local_install, "/api/voice/local/start": voice_local_start,
-                  "/api/voice/local/stop": voice_local_stop, "/api/update/local": update_local, "/api/update/push": update_push}
+                  "/api/voice/local/stop": voice_local_stop, "/api/voice/mic": set_mic, "/api/update/local": update_local, "/api/update/push": update_push}
         if u.path == "/api/quit":
             return self.send_json(*quit_app(body)) if self.local_only() else self.send_json({"error": "local only"}, 403)
         if u.path in routes:
