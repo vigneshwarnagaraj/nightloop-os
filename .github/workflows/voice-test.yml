@@ -1,0 +1,29 @@
+name: Test natural voice downloads
+on: workflow_dispatch
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          set -x
+          curl -fsSL https://api.github.com/repos/rhasspy/piper/releases/tags/2023.11.14-2 | python3 -c "import json,sys; [print(a['name'], a['size']) for a in json.load(sys.stdin)['assets']]"
+          curl -fL -o p.tgz https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz
+          tar xzf p.tgz && ls piper
+          for v in en/en_US/ryan/medium/en_US-ryan-medium en/en_GB/alan/medium/en_GB-alan-medium en/en_US/lessac/medium/en_US-lessac-medium; do
+            curl -fL -o $(basename $v).onnx "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/$v.onnx"
+            curl -fL -o $(basename $v).onnx.json "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/$v.onnx.json"
+          done
+          ls -la *.onnx
+          echo "United 4527, turn left heading two seven zero, descend and maintain five thousand" | ./piper/piper --model en_US-ryan-medium.onnx --length_scale 0.9 --output_file out.wav
+          ls -la out.wav
+  windows:
+    runs-on: windows-latest
+    steps:
+      - shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip -OutFile p.zip
+          Expand-Archive p.zip -DestinationPath . ; Get-ChildItem piper | Select-Object Name
+          Invoke-WebRequest "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx" -OutFile a.onnx
+          Invoke-WebRequest "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json" -OutFile a.onnx.json
+          "Tower, Speedbird 123, holding short runway one zero left, ready for departure" | .\piper\piper.exe --model a.onnx --output_file out.wav
+          Get-Item out.wav | Select-Object Length
