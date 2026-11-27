@@ -16,7 +16,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import urllib.parse
 from urllib.parse import parse_qs, urlparse
 
-APP, VERSION = "NIGHTLOOP", "1.5"
+APP, VERSION = "NIGHTLOOP", "1.6"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(ROOT, "static")
 DATA = os.path.join(ROOT, "data")
@@ -39,7 +39,7 @@ DEFAULT_CONFIG = {
     "center": {"enabled": True, "radius": 200},
     "ground": {"enabled": True},
     # positions YOU work; AI controllers handle the others
-    "positions": {"ground": True, "tower": True, "approach": False, "center": False},
+    "positions": {"delivery": False, "ground": True, "tower": True, "approach": False, "center": False},
     "lan": True,                 # reachable from other devices on the home network (Pi, updates)
     "update_source": "",         # Windows app: folder with newer NIGHTLOOP files (e.g. D:\\ATC SIM\\V1\\web_prototype)
 }
@@ -224,6 +224,7 @@ def load_airports():
                         "pair": (row.get(o + "_ident") or "").strip().upper(), "len": num(row.get("length_ft"), 0)})
         AIRPORTS.sort(key=lambda a: AP_TYPES.index(a["type"]))
         load_navaids()
+        load_freqs()
         AP_STATE["ready"] = True
         log(f"Airports ready: {len(AIRPORTS)} airports ({len(LARGE)} large hubs), runways for {len(RUNWAYS)} airports")
         AI.start()
@@ -794,7 +795,12 @@ class AiFeed(Feed):
                 f["ctl"] = {"t": now, "lat": s["lat"], "lon": s["lon"], "alt": s["alt"], "gs": s["gs"], "trk": s["trk"], "vs": s["vs"],
                             "mode": "app_auto", "hdg": s["trk"], "dir": None, "alt_t": float(min(s["alt"], end["elev"] + 3000)), "spd": None,
                             "auto": True, "faf": faf_of(end), "ils": {**end, "ap": tw["code"], "cap": False}}
-                comm(leg["cs"], f"Approach, {spoken(leg['cs'])}, {say_alt(s['alt'])}, expecting ILS runway {end['id']}", f["id"], pk("approach"))
+                comm(leg["cs"], f"Approach, {spoken(leg['cs'])}, {say_alt(s['alt'])}, expecting ILS runway {end['id']}"
+                     + (f", information {atis_letter()}" if WX["raw"] else ""), f["id"], pk("approach"))
+                if not mine("approach"):
+                    with ai_voice("approach"):
+                        comm("APP", f"{spoken(leg['cs'])}, {facility(tw['code'])} Approach, {say_altim() + ', ' if say_altim() else ''}"
+                                    f"descend and maintain {say_alt(tw['elev'] + 3000 - (tw['elev'] + 3000) % 100)}, expect ILS runway {end['id']}", f["id"])
                 return self.state(f, now)
         return s
 
@@ -916,7 +922,7 @@ def say_alt(ft):
     return f"flight level {ft // 100:03d}" if ft >= 18000 else f"{ft:,}"
 
 
-POSITIONS = ("ground", "tower", "approach", "center")
+POSITIONS = ("delivery", "ground", "tower", "approach", "center")
 AI_VOICE = threading.local()
 
 
@@ -931,19 +937,170 @@ def pk(pos):
 
 
 class ai_voice:
-    """Inside this block every ATC/pilot line is marked as an AI-controller exchange (dim, not spoken)."""
+    """Inside this block every ATC/pilot line is marked as an AI-controller exchange (grey; spoken when that window is open)."""
+    def __init__(self, pos=None):
+        self.pos = pos
+
     def __enter__(self):
         AI_VOICE.on = True
+        AI_VOICE.pos = self.pos
 
     def __exit__(self, *a):
         AI_VOICE.on = False
+        AI_VOICE.pos = None
 
 
-def comm(who, text, id_=None, kind="atc"):
+# ---------- aviation phrasing helpers
+PHON_W = {"A": "Alpha", "B": "Bravo", "C": "Charlie", "D": "Delta", "E": "Echo", "F": "Foxtrot", "G": "Golf", "H": "Hotel", "I": "India",
+          "J": "Juliett", "K": "Kilo", "L": "Lima", "M": "Mike", "N": "November", "O": "Oscar", "P": "Papa", "Q": "Quebec",
+          "R": "Romeo", "S": "Sierra", "T": "Tango", "U": "Uniform", "V": "Victor", "W": "Whiskey", "X": "X-ray", "Y": "Yankee", "Z": "Zulu"}
+NUM_W = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Niner"]
+
+
+def phon(name):
+    """Taxiway / gate names the way they are spoken: C1 -> Charlie One, B16 -> Bravo One Six."""
+    out = []
+    for ch in str(name or "").upper():
+        if ch in PHON_W:
+            out.append(PHON_W[ch])
+        elif ch.isdigit():
+            out.append(NUM_W[int(ch)])
+    return " ".join(out) or str(name)
+
+
+def facility(code):
+    a = AP_INDEX.get(code or "")
+    if not a:
+        return code or ""
+    c = (a.get("city") or a.get("name") or code).split("/")[0].split(",")[0].strip()
+    return c or code
+
+
+FREQS = {}            # airport ident -> {"DEL": "121.65", ...} from OurAirports airport-frequencies.csv
+FREQ_DEFAULT = {"ATIS": "135.40", "DEL": "121.65", "GND": "121.90", "TWR": "118.30", "DEP": "125.40", "APP": "119.00", "CTR": "132.45"}
+
+
+def freq(code, kind):
+    f_ = (FREQS.get(code) or {}).get(kind)
+    if not f_ and kind == "DEP":
+        f_ = (FREQS.get(code) or {}).get("APP")
+    return f_ or FREQ_DEFAULT[kind]
+
+
+def load_freqs():
+    path = os.path.join(DATA, "airport-frequencies.csv")
+    try:
+        if FORCE_DL["on"] or not os.path.exists(path) or time.time() - os.path.getmtime(path) > 30 * 86400:
+            try:
+                blob = urllib.request.urlopen(urllib.request.Request(OURAIRPORTS + "airport-frequencies.csv", headers={"User-Agent": UA}), timeout=120).read()
+                with open(path + ".tmp", "wb") as f:
+                    f.write(blob)
+                os.replace(path + ".tmp", path)
+            except Exception as e:
+                if not os.path.exists(path):
+                    log(f"Airport frequencies not available ({e}) - standard frequencies are used")
+                    return
+        FREQS.clear()
+        kinds = {"ATIS": "ATIS", "CLD": "DEL", "DEL": "DEL", "CLNC": "DEL", "GND": "GND", "TWR": "TWR", "DEP": "DEP", "APP": "APP",
+                 "A/D": "APP", "CNTR": "CTR", "CTR": "CTR"}
+        with open(path, encoding="utf-8", newline="") as f:
+            for row in csv.DictReader(f):
+                k = kinds.get((row.get("type") or "").upper())
+                mhz = row.get("frequency_mhz") or ""
+                if k and mhz:
+                    d_ = FREQS.setdefault(row.get("airport_ident", ""), {})
+                    d_.setdefault(k, f"{float(mhz):.3f}".rstrip("0").rstrip(".") if "." in mhz else mhz)
+        log(f"Frequencies ready for {len(FREQS):,} airports")
+    except Exception as e:
+        log(f"Frequencies failed ({e})")
+
+
+# ---------- live weather (METAR) and ATIS for the home airport
+WX = {"icao": None, "wdir": None, "wspd": 0, "wgst": None, "altim": None, "raw": "", "t": 0, "letter": 0, "err": ""}
+
+
+def wx_fetch():
+    code = (CFG["home"].get("icao") or "").upper()
+    if not code:
+        return
+    try:
+        d = http_json(f"https://aviationweather.gov/api/data/metar?ids={code}&format=json", timeout=20)
+        m = d[0] if isinstance(d, list) and d else None
+        if not m:
+            raise ValueError("no METAR")
+        raw = m.get("rawOb", "")
+        if raw != WX["raw"] or code != WX["icao"]:
+            WX["letter"] = (WX["letter"] + 1) % 26 if WX["raw"] else random.randrange(26)
+        wd = m.get("wdir")
+        WX.update(icao=code, wdir=(None if wd in (None, "VRB") else int(num(wd))), vrb=(wd == "VRB"), wspd=int(num(m.get("wspd"))),
+                  wgst=(int(num(m.get("wgst"))) if m.get("wgst") else None), altim=num(m.get("altim"), 1013.25), raw=raw,
+                  t=time.time(), err="", temp=m.get("temp"), visib=m.get("visib"))
+    except Exception as e:
+        WX["err"] = str(e)[:80]
+        if WX["icao"] != code:
+            WX.update(icao=code, wdir=None, wspd=0, wgst=None, altim=None, raw="", t=time.time())
+
+
+def wx_loop():
+    while True:
+        wx_fetch()
+        for _ in range(60):
+            time.sleep(10)
+            if WX["icao"] != (CFG["home"].get("icao") or "").upper():
+                break
+
+
+def say_wind():
+    if not WX["wspd"] or WX["wspd"] < 3:
+        return "wind calm"
+    d = "variable" if WX.get("vrb") or WX["wdir"] is None else f"{WX['wdir']:03d}"
+    return f"wind {d} at {WX['wspd']}" + (f" gusting {WX['wgst']}" if WX.get("wgst") else "")
+
+
+def say_altim():
+    if not WX["altim"]:
+        return ""
+    return f"altimeter {WX['altim'] * 0.02953:.2f}".replace(".", "") if (WX["icao"] or "").startswith("K") else f"QNH {round(WX['altim'])}"
+
+
+def atis_letter():
+    return PHON_W[chr(65 + WX["letter"] % 26)]
+
+
+def best_runway():
+    tw = tower_ctx()
+    if not tw or WX["wdir"] is None or WX["wspd"] < 3:
+        return None
+    return max(tw["ends"], key=lambda e: math.cos(math.radians(WX["wdir"] - e["crs"])))["id"]
+
+
+def api_weather(q):
+    tw = tower_ctx()
+    return {"icao": WX["icao"], "wind": say_wind(), "wdir": WX["wdir"], "wspd": WX["wspd"], "wgst": WX["wgst"], "altimeter": say_altim(),
+            "atis": atis_letter() if WX["raw"] else None, "raw": WX["raw"], "error": WX["err"], "best_runway": best_runway(),
+            "freqs": {k: freq(tw["code"], k) for k in FREQ_DEFAULT} if tw else {}}
+
+
+def new_squawk():
+    used = {fl["leg"].get("sq") for fl in AI.flights}
+    while True:
+        sq = "".join(str(random.randrange(8)) for _ in range(4))
+        if sq not in used and sq not in ("7500", "7600", "7700", "1200", "2000", "7000") and not sq.startswith("0"):
+            return sq
+
+
+WHO_POS = {"DEL": "delivery", "GND": "ground", "TWR": "tower", "APP": "approach", "DEP": "approach", "CTR": "center"}
+CALL_POS = (("Clearance", "delivery"), ("Ground", "ground"), ("Tower", "tower"), ("Approach", "approach"), ("Departure", "approach"),
+            ("Center", "center"))
+
+
+def comm(who, text, id_=None, kind="atc", pos=None):
     if getattr(AI_VOICE, "on", False) and kind in ("atc", "pilot", "unable"):
         kind = "ai"
+    if pos is None:
+        pos = WHO_POS.get(who) or next((p_ for w_, p_ in CALL_POS if text.startswith(w_ + ",")), None) or getattr(AI_VOICE, "pos", None)
     COMMS_SEQ[0] += 1
-    COMMS.append({"seq": COMMS_SEQ[0], "t": time.time(), "who": who, "text": text, "id": id_, "kind": kind})
+    COMMS.append({"seq": COMMS_SEQ[0], "t": time.time(), "who": who, "text": text, "id": id_, "kind": kind, "pos": pos})
 
 
 def perf(leg):
@@ -1022,6 +1179,10 @@ def step_ctl(f, c, dt):
             if tw and il.get("ap") == tw["code"]:
                 if along < 6 and not c.get("clr") and not c.get("call6"):
                     c["call6"] = True
+                    if not mine("approach"):
+                        with ai_voice("approach"):
+                            comm("APP", f"{spoken(leg['cs'])}, contact {facility(il.get('ap'))} Tower {freq(il.get('ap'), 'TWR')}", f["id"])
+                            comm(leg["cs"], f"Tower {freq(il.get('ap'), 'TWR')}, {spoken(leg['cs'])}", f["id"], "pilot")
                     comm(leg["cs"], f"Tower, {spoken(leg['cs'])}, 6 miles final runway {il['id']}", f["id"], pk("tower"))
                 if along < 0.8:
                     occ = rwy_occupied(tw["code"], il, leg["cs"], c["t"])
@@ -1162,13 +1323,23 @@ def ai_atc_tick(now):
                 APP_SEQ.setdefault(phys(il), []).append((d, f["id"]))
             if tw and il.get("ap") == tw["code"] and c["mode"] == "ils":
                 finals.append((ils_geom(c, il)[0], f, c))
+    # departure handoff: Tower -> Departure shortly after takeoff
+    for f in AI.flights:
+        h = f.get("dep_ho")
+        if not h or h["done"] or now < h["t"]:
+            continue
+        if not mine("tower") or now > h["t"] + 60:
+            if mine("tower"):
+                comm("NIGHTLOOP", f"{f['leg']['cs']} switched to Departure by itself (no handoff given - use HO)", f["id"], "event")
+            with ai_voice("tower"):
+                tower_to_departure(f)
     if tw and not mine("tower"):
-        with ai_voice():
+        with ai_voice("tower"):
             for along, f, c in finals:
                 il, cs = c["ils"], f["leg"]["cs"]
                 if il.get("cap") and along < 7 and not c.get("clr") and not rwy_occupied(tw["code"], il, cs, now):
                     c["clr"] = True
-                    comm("TWR", f"{spoken(cs)}, runway {il['id']}, cleared to land", f["id"])
+                    comm("TWR", f"{spoken(cs)}, {say_wind()}, runway {il['id']}, cleared to land", f["id"])
                     comm(cs, f"cleared to land runway {il['id']}, {spoken(cs)}", f["id"], "pilot")
             for f in AI.flights:
                 tr = f.get("twr")
@@ -1191,6 +1362,24 @@ def ai_atc_tick(now):
         dt = now - AI_ATC["last_deconf"] if AI_ATC["last_deconf"] else 5
         AI_ATC["last_deconf"] = now
         deconflict(now, min(dt, 30))
+
+
+def tower_to_departure(f):
+    h = f.get("dep_ho") or {}
+    h["done"] = True
+    f["dep_ho"] = h
+    leg = f["leg"]; cs = leg["cs"]
+    df = freq(leg["dep"], "DEP")
+    comm("TWR", f"{spoken(cs)}, contact {facility(leg['dep'])} Departure {df}, good day", f["id"])
+    comm(cs, f"{df}, good day, {spoken(cs)}", f["id"], "pilot")
+    c = f.get("ctl") or {}
+    alt = c.get("alt", 3000)
+    with no_ai():
+        comm(cs, f"Departure, {spoken(cs)}, passing {say_alt(alt)} for {say_alt(c.get('alt_t', alt))}", f["id"], pk("approach"))
+    if not mine("approach"):
+        with ai_voice("approach"):
+            comm("DEP", f"{spoken(cs)}, {facility(leg['dep'])} Departure, radar contact", f["id"])
+    return f"contact Departure {df}", f"{df}, good day"
 
 
 def deconflict(now, dt):
@@ -1269,7 +1458,7 @@ def center_cat(f, cx):
 def center_hook(f, s, cx):
     """Called for every airborne AI flight each second: check-in when entering the sector, note when leaving.
     Returns the flight's Center state for the page ('in', 'handed', or None)."""
-    if not cx or (f.get("shadow") and not f.get("ctl")) or not mine("center"):
+    if not cx or (f.get("shadow") and not f.get("ctl")):
         return None
     leg = f["leg"]
     if abs(s["lat"] - cx["lat"]) > cx["r"] / 60 + 1 and not (f.get("ctr") and f["ctr"].get("st") == "in"):
@@ -1290,13 +1479,27 @@ def center_hook(f, s, cx):
             return None
         f["ctr"] = st = {"leg": leg["t0"], "st": "in", "cat": cat}
         cs = leg["cs"]
+        k = pk("center")
         if cat == "dep":
-            comm(cs, f"Center, {spoken(cs)}, passing {say_alt(s['alt'])}, climbing", f["id"], "pilot")
+            comm(cs, f"Center, {spoken(cs)}, passing {say_alt(s['alt'])}, climbing", f["id"], k)
         elif cat == "arr":
-            comm(cs, f"Center, {spoken(cs)}, {say_alt(s['alt'])}, inbound {cx['code']}", f["id"], "pilot")
+            comm(cs, f"Center, {spoken(cs)}, {say_alt(s['alt'])}, inbound {cx['code']}", f["id"], k)
         else:
-            comm(cs, f"Center, {spoken(cs)}, {say_alt(s['alt'])}", f["id"], "pilot")
+            comm(cs, f"Center, {spoken(cs)}, {say_alt(s['alt'])}", f["id"], k)
+        if not mine("center"):
+            with ai_voice("center"):
+                if cat == "arr" and s["alt"] > 12000:
+                    comm("CTR", f"{spoken(cs)}, {facility(cx['code'])} Center, roger, descend at pilot's discretion, maintain {say_alt(11000)}", f["id"])
+                else:
+                    comm("CTR", f"{spoken(cs)}, {facility(cx['code'])} Center, roger", f["id"])
         return "in"
+    if st["st"] == "in" and not mine("center") and ((cat == "arr" and d < cx["app_r"] + 15) or (cat != "arr" and d > cx["r"] - 8)):
+        st["st"] = "handed"                                  # AI Center hands the flight on
+        with ai_voice("center"):
+            nxt = f"{facility(cx['code'])} Approach {freq(cx['code'], 'APP')}" if cat == "arr" else f"Center {random.choice(['132.45', '133.20', '134.85', '127.75'])}"
+            comm("CTR", f"{spoken(leg['cs'])}, contact {nxt}", f["id"])
+            comm(leg["cs"], f"{nxt.split()[-1]}, {spoken(leg['cs'])}", f["id"], "pilot")
+        return "handed" if inside else None
     if st["st"] == "in" and not inside:
         st["st"] = "out"
         comm("NIGHTLOOP", f"{leg['cs']} left your sector without a handoff", f["id"], "unable")
@@ -1309,6 +1512,8 @@ def center_hook(f, s, cx):
 def center_handoff(f, c):
     """HO command: arrivals go to Approach (automatic ILS once within 35 NM), others to the next sector (own navigation)."""
     leg = f["leg"]
+    if f.get("dep_ho") and not f["dep_ho"].get("done"):          # Tower: just departed -> Departure
+        return tower_to_departure(f)
     cx = center_ctx()
     st = f.get("ctr") or {}
     f["ctr"] = dict(st, leg=leg["t0"], st="handed", cat=st.get("cat") or (center_cat(f, cx) if cx else "ovf"))
@@ -1506,7 +1711,8 @@ def tower_cmd(f, toks, now):
         extra.append(f"climb and maintain {say_alt(alt)}")
     if after == "ron" and not alt:
         extra.append("own navigation")
-    txt = f"runway {end['id']}, cleared for takeoff" + (", " + ", ".join(extra) if extra else "")
+    txt = f"{say_wind()}, runway {end['id']}, cleared for takeoff" + (", " + ", ".join(extra) if extra else "")
+    f["dep_ho"] = {"t": now + 25, "done": False}
     comm("TWR", f"{spoken(cs)}, {txt}", f["id"], "atc")
     comm(cs, f"cleared for takeoff runway {end['id']}" + (", " + ", ".join(extra) if extra else "") + f", {spoken(cs)}", f["id"], "pilot")
     return True, txt
@@ -2206,9 +2412,67 @@ def gnd_new_dep(f, now, gx):
     gate = gnd_pick_gate(gx)
     tw = gx["tw"]
     trk = bearing(gate["lat"], gate["lon"], tw["lat"], tw["lon"])
-    f["gnd"] = {"leg": leg["t0"], "kind": "dep", "st": "gate", "lat": gate["lat"], "lon": gate["lon"], "trk": trk,
+    f["gnd"] = {"leg": leg["t0"], "kind": "dep", "st": "clrd", "lat": gate["lat"], "lon": gate["lon"], "trk": trk,
                 "gate": gate["name"], "path": [], "i": 1, "t": now, "gs": 0.0, "rwy": tw["dep"]["id"], "clr": [], "xr": ""}
-    comm(leg["cs"], f"Ground, {spoken(leg['cs'])}, gate {gate['name']}, ready to push and start", f["id"], pk("ground"))
+    info = f", information {atis_letter()}" if WX["raw"] else ""
+    comm(leg["cs"], f"Clearance, {spoken(leg['cs'])}, gate {phon(gate['name'])}, IFR to {leg['arr']}{info}, request clearance",
+         f["id"], pk("delivery"))
+    if not mine("delivery"):
+        with ai_voice("delivery"):
+            give_clearance(f, [], now)
+        ground_call(f)
+
+
+def clearance_parts(f, toks):
+    leg = f["leg"]
+    tw = tower_ctx()
+    init = 5000
+    a = AP_INDEX.get(leg["arr"]); d = AP_INDEX.get(leg["dep"])
+    D = dist_nm(d["lat"], d["lon"], a["lat"], a["lon"]) if a and d else 500
+    cruise = int(cruise_level(leg, d, a, D)) if a and d else 35000
+    sq = None
+    for t in toks:
+        m = re.match(r"^(?:A)(\d{2,5})$", t)
+        if m:
+            v = int(m.group(1)); init = v * 100 if v < 1000 else v
+        m = re.match(r"^FL(\d{2,3})$", t)
+        if m:
+            cruise = int(m.group(1)) * 100
+        m = re.match(r"^(?:SQ|SQUAWK)(\d{4})$", t)
+        if m and all(ch in "01234567" for ch in m.group(1)):
+            sq = m.group(1)
+    return init, cruise, sq or new_squawk(), freq(tw["code"] if tw else leg["dep"], "DEP")
+
+
+def give_clearance(f, toks, now):
+    """IFR clearance: destination, initial altitude, expected cruise level, departure frequency, squawk."""
+    g = f["gnd"]; leg = f["leg"]; cs = leg["cs"]
+    init, cruise, sq, dep_f = clearance_parts(f, toks)
+    leg["sq"] = sq
+    g["st"] = "gate"; g["st_seen"] = None
+    txt = (f"cleared to {leg['arr']} airport as filed, climb and maintain {say_alt(init)}, expect {say_alt(cruise)} "
+           f"one zero minutes after departure, departure frequency {dep_f}, squawk {sq}")
+    comm("DEL", f"{spoken(cs)}, {txt}", f["id"], "atc")
+    comm(cs, f"cleared to {leg['arr']} as filed, {say_alt(init)}, expect {say_alt(cruise)}, {dep_f}, squawk {sq}, {spoken(cs)}", f["id"], "pilot")
+    f["clr_alt"] = init
+    return True, txt
+
+
+class no_ai:
+    """Lines inside this block keep their own kind even when an AI controller block is active around it."""
+    def __enter__(self):
+        self.prev = (getattr(AI_VOICE, "on", False), getattr(AI_VOICE, "pos", None))
+        AI_VOICE.on = False
+
+    def __exit__(self, *a):
+        AI_VOICE.on, AI_VOICE.pos = self.prev
+
+
+def ground_call(f):
+    g = f["gnd"]; cs = f["leg"]["cs"]
+    info = f", information {atis_letter()}" if WX["raw"] else ""
+    with no_ai():
+        comm(cs, f"Ground, {spoken(cs)}, gate {phon(g['gate'])}, ready to push and start{info}", f["id"], pk("ground"))
 
 
 def gnd_new_arr(f, c, now, gx, end):
@@ -2300,7 +2564,7 @@ def gnd_state(f, now):
     elev = gx["tw"]["elev"]
     if f.get("gnd") is not g:
         return AI.tower_hold_state(f) if f.get("twr") else None
-    phase = {"gate": f"At gate {g['gate']}", "push": "Pushing back", "pushed": "Ready to taxi",
+    phase = {"clrd": f"At gate {g['gate']}, waiting for IFR clearance", "gate": f"At gate {g['gate']}", "push": "Pushing back", "pushed": "Ready to taxi",
              "taxi": "Taxiing" + (" to runway " + g["rwy"] if g["kind"] == "dep" else " to gate " + g["gate"]),
              "held": "Holding position", "hs_rwy": f"Holding short runway {g['xr']}", "roll": f"Landing roll runway {g['rwy']}",
              "exit": f"Clear of runway {g['rwy']}, waiting for taxi"}.get(g["st"], "On ground")
@@ -2351,7 +2615,11 @@ def ground_cmd(f, toks, now):
                 mode = None
             else:
                 via.append(t); continue
-        if t in ("PB", "PUSH", "PUSHBACK"):
+        if t in ("CLR", "CLEARANCE", "CD", "CLEARED"):
+            act = "clr"
+        elif act == "clr":
+            pass
+        elif t in ("PB", "PUSH", "PUSHBACK"):
             act = "pb"
         elif t in ("TAXI", "TX", "T"):
             act = "taxi"
@@ -2376,6 +2644,14 @@ def ground_cmd(f, toks, now):
         return False, f"{cs} is with Ground ({g['st']}): use {hint}" + (f". Not understood: {' '.join(bad)}" if bad else "")
     gs_ = lambda txt: comm("GND", f"{spoken(cs)}, {txt}", f["id"], "atc")
     rb = lambda txt: comm(cs, f"{txt}, {spoken(cs)}", f["id"], "pilot")
+    if act == "clr":
+        if g["st"] != "clrd":
+            return False, f"{cs} already has its clearance"
+        r_ = give_clearance(f, toks, now)
+        ground_call(f)
+        return r_
+    if g["st"] == "clrd":
+        return False, f"{cs} has no IFR clearance yet - give it first: CLR (optional: CLR A050 FL350 SQ4521)"
     if act == "pb":
         if g["st"] != "gate":
             return False, f"{cs} is not at the gate"
@@ -2424,9 +2700,13 @@ def ground_cmd(f, toks, now):
     for p in pts:
         if p[3] and p[3].replace("|", " and ") not in xs:
             xs.append(p[3].replace("|", " and "))
-    txt = f"taxi to {dest_txt}" + (f" via {' '.join(names)}" if names else "") + (f", hold short runway {xs[0]}" if xs else "")
+    if plan["dest"][0] == "gate":
+        dest_txt = "gate " + phon(plan["dest"][1])
+    via_txt = ", ".join(phon(n) for n in names)
+    hs = xs[0].split("/")[0].split(" and ")[0] if xs else ""
+    txt = f"taxi to {dest_txt}" + (f" via {via_txt}" if names else "") + (f", hold short runway {hs}" if xs else "")
     gs_(txt)
-    rb(f"{dest_txt}" + (f" via {' '.join(names)}" if names else "") + (f", hold short {xs[0]}" if xs else ""))
+    rb(f"{dest_txt}" + (f" via {via_txt}" if names else "") + (f", hold short {hs}" if xs else ""))
     return True, txt
 
 
@@ -2453,7 +2733,7 @@ def api_ground(q):
                 out["flights"].append({"id": f["id"], "cs": f["leg"]["cs"], "type": f["leg"]["type"], "kind": g["kind"], "st": g["st"],
                                        "gate": g["gate"], "rwy": g["rwy"], "xr": g["xr"], "to": f["leg"]["arr"], "from": f["leg"]["dep"],
                                        "via": twy_names(g["path"][g["i"] - 1:]) if g["st"] in ("taxi", "held", "hs_rwy") else []})
-    order = {"hs_rwy": 0, "exit": 1, "gate": 2, "pushed": 3, "held": 4, "taxi": 5, "push": 6, "roll": 7}
+    order = {"hs_rwy": 0, "exit": 1, "clrd": 2, "gate": 2, "pushed": 3, "held": 4, "taxi": 5, "push": 6, "roll": 7}
     out["flights"].sort(key=lambda x: order.get(x["st"], 9))
     return out
 
@@ -3630,7 +3910,7 @@ class Handler(SimpleHTTPRequestHandler):
                   "/api/system/osupdate": os_update_status, "/api/peers": api_peers,
                   "/api/positions": lambda q: {"positions": CFG.get("positions")},
                   "/api/voice/local": voice_local_info, "/api/voice/local/partial": voice_local_partial,
-                  "/api/tts/info": tts_info, "/api/data/status": data_status,
+                  "/api/tts/info": tts_info, "/api/data/status": data_status, "/api/weather": api_weather,
                   "/api/update/github": lambda q: {"repo": github_repo(), "auto": CFG.get("auto_update", True), **GH_UPD}}
         if u.path in routes:
             return self.send_json(routes[u.path](q))
@@ -3682,6 +3962,7 @@ def main():
     SRV["srv"] = srv
     threading.Thread(target=discovery_listener, daemon=True).start()
     threading.Thread(target=github_auto, daemon=True).start()
+    threading.Thread(target=wx_loop, daemon=True).start()
     url = f"http://localhost:{port}/"
     log(f"{APP} v{VERSION} running at {url}" + (f" - other devices: " + ", ".join(f"http://{i}:{port}" for i in lan_ips()) if bind == "0.0.0.0" else ""))
     log("Keep this window open. Close it to stop the simulator.")

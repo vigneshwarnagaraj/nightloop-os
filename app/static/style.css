@@ -278,3 +278,10 @@ body.open #card { left: calc(var(--rail) + 350px); }
 #learn .lhd { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 #learn .lhd b { color: #f0479a; letter-spacing: .1em; }
 #learn iframe { flex: 1; border: 0; background: #0b1016; }
+
+/* v1.6 */
+#wxChip { height: 36px; display: flex; align-items: center; gap: 4px; padding: 0 10px; border-radius: 10px; background: rgba(255,255,255,.05); border: 1px solid var(--line); font: 12px Consolas, monospace; color: #9fb0bd; white-space: nowrap; cursor: help; }
+#wxChip b { color: #fff; }
+.pane.guide { display: flex; flex-direction: column; background: #0b1016; }
+.pane.guide .gframe { flex: 1; border: 0; width: 100%; margin-top: 44px; background: #0b1016; }
+#learn .lhd span { display: flex; gap: 6px; align-items: center; }

@@ -48,10 +48,12 @@
   </div>
   <div id="positions" title="Positions you work. The others are handled by AI controllers.">
     <span>You work</span>
+    <button data-p="delivery" title="Clearance Delivery: IFR clearances, squawk codes, departure frequency">DEL</button>
     <button data-p="ground" title="Ground: push back, taxi">GND</button><button data-p="tower" title="Tower: line up, takeoff, landing">TWR</button>
     <button data-p="approach" title="Approach: vectors and ILS">APP</button><button data-p="center" title="Center: enroute, handoffs">CTR</button>
   </div>
   <div class="tgrow"></div>
+  <div id="wxChip" hidden title="Live weather"></div>
   <div id="sysbar" hidden>
     <button id="sysWifi" title="Wi-Fi"><svg viewBox="0 0 24 24"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10.5 10.5 0 0 1 14 0M8.5 15.5a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1.3" class="fill"/></svg></button>
     <button id="sysPower" title="Shut down or restart the Raspberry Pi"><svg viewBox="0 0 24 24"><path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0"/></svg></button>
@@ -139,7 +141,7 @@
     <label><input type="checkbox" data-opt="stca"> Conflict alerts for AI planes (less than 3 NM and 1,000 ft)</label>
     <label><input type="checkbox" data-opt="gndDiagram"> Ground window: airport diagram (taxiways, aprons, buildings) instead of a map</label>
     <label><input type="checkbox" data-opt="twrChart"> Tower window: airport chart too (like the Ground window)</label>
-    <label class="sel">Airport diagram colours <select data-opt="gndTheme"><option value="real">Realistic (painted lines, grass, terminals)</option><option value="chart">Airport chart (light green)</option><option value="radar">Ground radar (dark)</option></select></label>
+    <label class="sel">Airport diagram colours <select data-opt="gndTheme"><option value="real">Realistic (painted lines, grass, terminals)</option><option value="sat">Satellite photo (real airport)</option><option value="chart">Airport chart (light green)</option><option value="radar">Ground radar (dark)</option></select></label>
     <label><input type="checkbox" data-opt="showAiComms"> Show radio calls of the AI controllers (grey)</label>
     <div class="muted">Range rings and the recommended zone are shown only in the Approach and Tower windows.</div>
   </section>
@@ -165,7 +167,8 @@
     <div class="muted" id="ttsInfo"></div>
     <div class="crow"><button id="ttsInstall" hidden>Install natural voices (about 200 MB download)</button></div>
     <label><input type="checkbox" data-opt="radioFx"> Radio effect (sounds like a real VHF radio)</label>
-    <label><input type="checkbox" data-opt="speakAi"> Also read out the AI controllers' calls</label>
+    <label><input type="checkbox" data-opt="hearAiWindows" checked> Hear the AI controllers of the windows you have open (e.g. APP, CTR)</label>
+    <label><input type="checkbox" data-opt="speakAi"> Hear all AI controllers' calls</label>
     <div class="crow"><button id="voiceTest">Test pilot voice</button></div>
   </section>
 
@@ -214,7 +217,7 @@
   <div class="rbi"><small id="rbInfo" class="muted"></small><span class="grow"></span>
     <button id="rbUndo">Undo</button><button id="rbClear">Clear</button><button id="rbCancel">Cancel</button><button id="rbSend" class="primary">Send taxi</button></div></div>
 
-<div id="learn" hidden><div class="lbox"><div class="lhd"><b>LEARN ATC WITH NIGHTLOOP</b><button id="learnClose">&times;</button></div>
+<div id="learn" hidden><div class="lbox"><div class="lhd"><b>LEARN ATC WITH NIGHTLOOP</b><span><button id="learnSplit" title="Show the guide in a window next to the radar">Open next to the radar</button> <button id="learnClose">&times;</button></span></div>
   <iframe src="help.html" title="NIGHTLOOP training guide"></iframe></div></div>
 
 <div id="dlg" hidden><div class="dbox"><div class="dhd"><b id="dlgTitle"></b><button id="dlgClose">&times;</button></div><div id="dlgBody"></div></div></div>

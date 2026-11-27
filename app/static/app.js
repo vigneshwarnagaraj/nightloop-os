@@ -1,7 +1,7 @@
 'use strict';
 // NIGHTLOOP - V1 browser prototype (v0.7): multi-window layout, task windows (World / Approach / Tower),
 // traffic drawing, settings, search, comms, conflict alerts.
-const APP_VERSION = '1.5';
+const APP_VERSION = '1.6';
 
 const COLORS = { ai: '#39ff6a', vatsim: '#00d9ff', ivao: '#ffb300', real: '#ff3df2' };
 const NAMES = { ai: 'AI planes', vatsim: 'VATSIM', ivao: 'IVAO', real: 'Real world (ADS-B)' };
@@ -14,6 +14,7 @@ const KINDS = {
   tower: { title: 'TOWER', zone: 10, zoom: 12.3, rings: 2 },
   center: { title: 'CENTER', zone: 200, zoom: 6.4, rings: 50, label: 'CENTER SECTOR' },
   ground: { title: 'GROUND', zone: 2.5, zoom: 14.3, rings: 1, label: 'GROUND AREA' },
+  guide: { title: 'LEARN ATC', zone: 0 },
 };
 const chartKind = (k) => S.gndDiagram && (k === 'ground' || (k === 'tower' && S.twrChart));   // airport-chart windows
 const D2R = Math.PI / 180, R_NM = 3440.065;
@@ -26,10 +27,11 @@ const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const params = new URLSearchParams(location.search);
 const SOLO = KINDS[params.get('solo')] ? params.get('solo') : null;      // a popped-out window shows one task only
 const DEFAULTS = { style: 'darktest', placeLabels: false, grid: 'tl', labels: true, trails: true, vectors: true,
-  airports: true, runways: true, apLabels: 'full', rate: '1000', statusbar: true, cat: 'general', comms: true, stca: true, voiceIn: true, pttKey: 'Backquote', pttName: '`', pttMode: 'hold', pttHeadset: false, pttGamepad: false, voiceEngine: 'auto', voiceOut: true, voiceRate: '1.1', gndDiagram: true, gndTheme: 'real', twrChart: true, voiceNatural: true, radioFx: true, speakAi: false, showAiComms: true,
+  airports: true, runways: true, apLabels: 'full', rate: '1000', statusbar: true, cat: 'general', comms: true, stca: true, voiceIn: true, pttKey: 'Backquote', pttName: '`', pttMode: 'hold', pttHeadset: false, pttGamepad: false, voiceEngine: 'auto', voiceOut: true, voiceRate: '1.1', gndDiagram: true, gndTheme: 'real', twrChart: true, voiceNatural: true, radioFx: true, speakAi: false, hearAiWindows: true, showAiComms: true,
   clock24: 'true', tz: 'system', showUtc: false, showSeconds: true, layout: 1, panes: ['world', 'approach', 'tower', 'world'] };
 const S = { ...DEFAULTS };
 try { Object.assign(S, JSON.parse(localStorage.getItem('nightloop.settings') || '{}')); } catch (e) { /* ignore */ }
+if (!S.v16) { S.gndTheme = 'real'; S.v16 = 1; }
 if (SOLO) { S.layout = 1; S.panes = [SOLO]; document.body.classList.add('solo'); }
 const saveS = () => {
   try {
@@ -156,7 +158,10 @@ class View {
   applyStyle() {
     if (this.base) { this.map.removeLayer(this.base); this.base = null; }
     if (this.place) { this.map.removeLayer(this.place); this.place = null; }
-    if (chartKind(this.kind)) return;       // airport diagram drawn by NIGHTLOOP, no map tiles
+    if (chartKind(this.kind)) {             // airport diagram drawn by NIGHTLOOP (or a satellite photo)
+      if (S.gndTheme === 'sat') { this.base = esri('World_Imagery', { maxNativeZoom: 19, maxZoom: 20 }); this.base.addTo(this.map); }
+      return;
+    }
     if (!STYLE_MAKERS[S.style]) S.style = 'darktest';
     try { this.base = STYLE_MAKERS[S.style](); this.base.addTo(this.map); }
     catch (e) { console.error('Map style failed', e); this.base = STYLE_MAKERS.street(); this.base.addTo(this.map); }
@@ -213,6 +218,7 @@ class View {
 
 const TOWER_SIDE = `<div class="tside"><div class="tsh"><b>TOWER</b><button class="tmin">&ndash;</button></div>
   <label><input type="checkbox" class="twrOn"> Tower control on</label>
+  <div class="muted twrWx"></div>
   <label class="sel">Arrival runway <select class="twrArr"></select></label>
   <label class="sel">Departure runway <select class="twrDep"></select></label>
   <h3>Departures waiting</h3><div class="twrDeps"></div>
@@ -235,6 +241,24 @@ const GROUND_SIDE = `<div class="tside"><div class="tsh"><b>GROUND</b><button cl
 const APP_SIDE = `<div class="tside"><div class="tsh"><b>INBOUND</b><button class="tmin">&ndash;</button></div>
   <div class="muted" style="margin-top:2px">AI arrivals within 80 NM of the airport. Click to select.</div><div class="appList"></div></div>`;
 
+class GuideView {
+  constructor(kind, el, idx) {
+    this.kind = kind; this.el = el; this.idx = idx; this.cfg = KINDS[kind]; this.screenPts = []; this.apPts = []; this.airports = []; this.runways = []; this.navaids = [];
+    el.className = 'pane guide';
+    const kindSel = SOLO ? '' : `<select class="pkind">${Object.keys(KINDS).map((k) => `<option value="${k}"${k === kind ? ' selected' : ''}>${KINDS[k].title}</option>`).join('')}</select>`;
+    el.innerHTML = `<div class="phd">${kindSel}<span class="ptitle">${kindSel ? '' : this.cfg.title}<em></em></span>` +
+      (SOLO ? '' : '<button class="pbtn ppop" title="Open in a new window">&#x29C9;</button><button class="pbtn pclosew" title="Close this window">&times;</button>') +
+      '</div><iframe class="gframe" src="help.html" title="Training guide"></iframe>';
+    const ksel = el.querySelector('.pkind'); if (ksel) ksel.onchange = () => setPaneKind(this.idx, ksel.value);
+    const pop = el.querySelector('.ppop'); if (pop) pop.onclick = () => window.open('/?solo=guide', `nightloop_guide_${Date.now()}`, 'width=1100,height=800');
+    const cls = el.querySelector('.pclosew'); if (cls) cls.onclick = () => closeView(this);
+    el.addEventListener('mousedown', () => setFocus(this), true);
+    this.map = { invalidateSize() {}, getZoom() { return 0; }, flyTo() {}, panTo() {}, remove() {} };
+  }
+  applyStyle() {} fitMin() {} focusAirport() {} loadAirports() {} destroy() {}
+  bounds() { return null; }
+}
+const makeView = (kind, el, idx) => (kind === 'guide' ? new GuideView(kind, el, idx) : new View(kind, el, idx));
 // ---------- layout manager (1-4 windows) ----------
 function buildLayout() {
   views.forEach((v) => v.destroy());
@@ -243,7 +267,7 @@ function buildLayout() {
   host.className = 'l' + S.layout; host.innerHTML = '';
   for (let i = 0; i < S.layout; i++) {
     const el = document.createElement('div'); host.appendChild(el);
-    views.push(new View(S.panes[i] || 'world', el, i));
+    views.push(makeView(S.panes[i] || 'world', el, i));
   }
   setFocus(views[0]);
   document.querySelectorAll('#layouts button').forEach((b) => b.classList.toggle('on', +b.dataset.n === S.layout));
@@ -279,7 +303,7 @@ function setPaneKind(idx, kind) {   // split mode: change one window with its he
   const old = views[idx];
   const el = document.createElement('div');
   old.destroy(); old.el.replaceWith(el);
-  views[idx] = new View(kind, el, idx);
+  views[idx] = makeView(kind, el, idx);
   S.panes[idx] = kind; saveS();
   if (chartKind(kind)) loadDiagram(true);
   setFocus(views[idx]);
@@ -480,7 +504,7 @@ let pollTimer = null;
 async function pollNow() {
   clearTimeout(pollTimer);
   try {
-    const b = views.map((v) => v.bounds().join(',')).join('|');
+    const b = views.map((v) => v.bounds()).filter(Boolean).map((x) => x.join(',')).join('|') || '0,0,0.01,0.01,10';
     const d = await (await fetch('/api/traffic?b=' + encodeURIComponent(b))).json();
     const now = performance.now() / 1000, seen = new Set();
     for (const t of d.targets) {
@@ -731,6 +755,10 @@ function drawDiagram(s, z) {
     if (close) ctx.closePath();
   };
   if (S.gndTheme === 'real') return drawRealistic(s, z, sc, tl, mpp, path);
+  if (S.gndTheme === 'sat') {                     // photo underneath: only the hold-short points and stand numbers
+    if (z >= 15) { ctx.fillStyle = '#ff3b4e'; for (const a of groundDiagram.hold) { const x = a[0] * sc - tl.x, y = a[1] * sc - tl.y; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill(); } }
+    return;
+  }
   const C = S.gndTheme === 'chart'
     ? { apron: '#e4ede7', apronEdge: '#b4c7bb', bldg: '#6f7a7a', bldgEdge: '#566161', twyEdge: '#7f8a8a', twy: '#a9b2b2', twyLine: null, rwy: '#727d7d', rwyEdge: '#ffffff', name: '#47574f' }
     : { apron: '#16202a', apronEdge: null, bldg: '#2b3743', bldgEdge: '#3d4b58', twyEdge: null, twy: '#3a4754', twyLine: 'rgba(242,194,48,0.55)', rwy: '#6d7a86', rwyEdge: null, name: '#7f8c98' };
@@ -917,9 +945,11 @@ function drawGroundInfo(s, z, light) {
     const p = pt(la, lo);
     if (p.x < 0 || p.y < 0 || p.x > s.x || p.y > s.y) continue;
     const pc = light ? '#6a2bb0' : '#c9a0ff', sel = RB && RB.to === name;
+    const quiet = (S.gndTheme === 'real' || S.gndTheme === 'sat') && !sel && !(RB && RB.kind === 'arr') && z < 16.3;
+    V.gateHits.push([p.x - 6, p.y - 14, ctx.measureText(name).width + 14, 20, name]);
+    if (quiet) continue;
     ctx.strokeStyle = sel ? '#b02fc4' : pc; ctx.lineWidth = sel ? 2.5 : 1.2; ctx.strokeRect(p.x - 3, p.y - 3, 6, 6);
     if (z >= (S.gndTheme === 'real' ? 16.3 : 15.2) || sel || (RB && RB.kind === 'arr')) label(name, p.x + 5, p.y - 4, sel ? '#b02fc4' : light ? '#4b1d80' : '#d9c2ff', light ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.85)');
-    V.gateHits.push([p.x - 6, p.y - 14, ctx.measureText(name).width + 14, 20, name]);
   }
 }
 function drawTaxiPath(t, p, sel) {
@@ -932,7 +962,7 @@ function drawTaxiPath(t, p, sel) {
   ctx.strokeStyle = sel ? '#ffe14d' : 'rgba(255,225,77,0.45)'; ctx.lineWidth = sel ? 3 : 2; ctx.setLineDash(sel ? [] : [6, 5]); ctx.stroke();
   ctx.restore();
 }
-const GND_TAG = { gate: (g) => 'AT GATE ' + g.gate, push: () => 'PUSHBACK', pushed: () => 'READY TO TAXI', taxi: (g) => 'TAXI ' + (g.rwy && !g.gate ? g.rwy : ''),
+const GND_TAG = { clrd: (g) => 'CLEARANCE? ' + g.gate, gate: (g) => 'AT GATE ' + g.gate, push: () => 'PUSHBACK', pushed: () => 'READY TO TAXI', taxi: (g) => 'TAXI ' + (g.rwy && !g.gate ? g.rwy : ''),
   held: () => 'HOLDING POSITION', hs_rwy: (g) => 'HOLD SHORT ' + g.xr, roll: () => 'ROLLOUT', exit: () => 'CLEAR OF RWY' };
 function drawRoute(t, p) {
   if (!route || route.id !== t.id || (!route.dep && !route.arr)) return;
@@ -967,10 +997,11 @@ function drawPlane(x, y, trk, scale, col, alpha) {
   baseTf(); ctx.globalAlpha = 1;
 }
 function drawView(v, now) {
+  if (!v.radar) return 0;
   const cv = v.radar._container;
   if (!cv || !v.radar._bounds || v.radar._scaled || v.map._animatingZoom) return 0;
   V = v; map = v.map; ctx = v.ctx;
-  const chart = chartKind(v.kind) && (S.gndTheme === 'chart' || S.gndTheme === 'real');
+  const chart = chartKind(v.kind) && (S.gndTheme === 'chart' || S.gndTheme === 'real');      // light labels (not on the dark satellite photo)
   const s = map.getSize(), z = map.getZoom(), light = chart || (LIGHT_STYLES.has(S.style) && !chartKind(v.kind));
   DPR = window.devicePixelRatio || 1;
   const off = map.containerPointToLayerPoint([0, 0]).subtract(v.radar._bounds.min);
@@ -1128,17 +1159,21 @@ function renderCard() {
     ['Squawk', t.squawk || '-'], ['Position', `${p[0].toFixed(4)}, ${wrap(p[1]).toFixed(4)}`], ['Data age', `${Math.round(performance.now() / 1000 - t.rx)} s`]];
   if (t.reg) rows.splice(2, 0, ['Registration', t.reg]);
   card.hidden = false;
-  if ($('cardCtl').dataset.id !== t.id || $('cardCtl').dataset.mode !== (t.gnd ? 'gnd' : 'air')) renderControls(t);
+  const mode = t.gnd ? 'gnd-' + (t.gnd.st === 'clrd' ? 'clrd' : 'go') : 'air';
+  if ($('cardCtl').dataset.id !== t.id || $('cardCtl').dataset.mode !== mode) renderControls(t);
   info.innerHTML = `<div class="ct"><span class="cs">${esc(t.callsign)}</span>${t.shadow ? '<span class="tag">SHADOW</span>' : ''}${t.ctl ? '<span class="tag">UNDER YOUR CONTROL</span>' : ''}` +
     `<span><span class="chip" style="background:${COLORS[t.source]}">${NAMES[t.source]}</span> <button class="x" onclick="closeCard()">×</button></span></div>` +
     `<table>${rows.map(([k, v]) => `<tr><td>${k}</td><td>${esc(v)}</td></tr>`).join('')}</table>` + routeHtml;
 }
 function renderControls(t) {
   const box = $('cardCtl');
-  box.dataset.id = t.id; box.dataset.mode = t.gnd ? 'gnd' : 'air';
+  box.dataset.id = t.id; box.dataset.mode = t.gnd ? 'gnd-' + (t.gnd.st === 'clrd' ? 'clrd' : 'go') : 'air';
   if (t.gnd) {
     const dep = !t.gnd.gate || t.gnd.st === 'gate' || t.gnd.st === 'push' || t.gnd.st === 'pushed' || (t.dep === (home && home.icao) && t.gnd.st !== 'exit' && t.gnd.st !== 'roll');
     box.innerHTML = `<div class="ctl"><h4>Ground</h4>
+      ${t.gnd.st === 'clrd' ? `<h4>Clearance delivery</h4><div class="crow"><label>INITIAL<input id="dAlt" placeholder="5000" maxlength="5" style="width:58px"></label>
+        <label>CRUISE<input id="dFl" placeholder="FL350" maxlength="5" style="width:58px"></label><label>SQUAWK<input id="dSq" placeholder="auto" maxlength="4" style="width:50px"></label>
+        <button class="primary" id="dClr">Give clearance</button></div>` : ''}
       <div class="crow"><button class="primary" id="gRoute" title="Click taxiway names on the Ground map to build the route">Build taxi route...</button></div>
       <div class="crow"><button id="gPb">Push back</button><button id="gHold">Hold position</button><button id="gCont">Continue</button><button id="gCross">Cross runway</button></div>
       <div class="crow"><label>${dep ? 'RUNWAY' : 'GATE'}<input id="gTo" placeholder="${dep ? '10L' : 'C17'}" maxlength="5" style="width:56px"></label>
@@ -1147,6 +1182,10 @@ function renderControls(t) {
     const send = (text) => sendCmd(text, t.id);
     $('gPb').onclick = () => send('PB');
     $('gRoute').onclick = () => startRoute(t.id);
+    if ($('dClr')) $('dClr').onclick = () => {
+      const a = $('dAlt').value.trim(), f = $('dFl').value.trim().toUpperCase().replace(/^FL/, ''), q = $('dSq').value.trim();
+      send(['CLR', a ? 'A' + a : '', f ? 'FL' + f : '', q ? 'SQ' + q : ''].filter(Boolean).join(' '));
+    };
     $('gHold').onclick = () => send('HOLD');
     $('gCont').onclick = () => send('CONT');
     $('gCross').onclick = () => send('CROSS');
@@ -1215,10 +1254,13 @@ function addLine(m) {
 }
 const addLocal = (text, kind) => addLine({ t: Date.now() / 1000, who: 'NIGHTLOOP', text, kind });
 let commsLoaded = false;
+// AI controller radio is heard for the positions whose window is open (Clearance Delivery belongs to the Ground window)
+const POS_WIN = { delivery: 'ground', ground: 'ground', tower: 'tower', approach: 'approach', center: 'center' };
+const listening_to = (pos) => !!pos && S.hearAiWindows !== false && views.some((v) => v.kind === POS_WIN[pos]);
 async function pollComms() {
   try {
     const d = await (await fetch('/api/comms?since=' + commsSeq)).json();
-    d.items.forEach((m) => { addLine(m); if (commsLoaded && m.who !== 'NIGHTLOOP' && (m.kind === 'pilot' || m.kind === 'unable' || (S.speakAi && m.kind === 'ai'))) speak(m.who, m.text); });
+    d.items.forEach((m) => { addLine(m); if (commsLoaded && m.who !== 'NIGHTLOOP' && (m.kind === 'pilot' || m.kind === 'unable' || (m.kind === 'ai' && (S.speakAi || listening_to(m.pos))))) speak(m.who, m.text); });
     commsSeq = d.seq; commsLoaded = true;
   } catch (e) { /* ignore */ }
 }
@@ -1444,10 +1486,10 @@ function wireGroundSide(el) {
     else selectTarget(b.dataset.id);
   });
 }
-const GND_TXT = { gate: (f) => `at gate ${f.gate} \u2192 ${f.to}`, pushed: (f) => `pushed back, gate ${f.gate}`, push: () => 'pushing back',
+const GND_TXT = { clrd: (f) => `at gate ${f.gate}, wants IFR clearance to ${f.to}`, gate: (f) => `at gate ${f.gate} \u2192 ${f.to}`, pushed: (f) => `pushed back, gate ${f.gate}`, push: () => 'pushing back',
   hs_rwy: (f) => `holding short runway ${f.xr.replace('|', ' and ')}`, exit: (f) => `clear of runway ${f.rwy}, gate ${f.gate}`, held: () => 'holding position',
   taxi: (f) => (f.kind === 'dep' ? `taxi to ${f.rwy}` : `taxi to gate ${f.gate}`) + (f.via.length ? ' via ' + f.via.join(' ') : ''), roll: (f) => `landing roll ${f.rwy}` };
-const GND_BTN = { gate: [['PB', 'Push back'], ['ROUTE', 'Route'], ['TAXI', 'Taxi']], pushed: [['ROUTE', 'Route'], ['TAXI', 'Taxi']], hs_rwy: [['CROSS', 'Cross']],
+const GND_BTN = { clrd: [['CLR', 'Clearance']], gate: [['PB', 'Push back'], ['ROUTE', 'Route'], ['TAXI', 'Taxi']], pushed: [['ROUTE', 'Route'], ['TAXI', 'Taxi']], hs_rwy: [['CROSS', 'Cross']],
   exit: [['ROUTE', 'Route'], ['TAXI', 'Taxi to gate']], held: [['ROUTE', 'Route'], ['CONT', 'Continue']], taxi: [['HOLD', 'Hold']] };
 function renderGround(d) {
   document.querySelectorAll('.pane .tside').forEach((side) => {
@@ -1457,8 +1499,8 @@ function renderGround(d) {
       d.state === 'loading' ? 'Loading taxiways and gates...' : (d.src === 'simple' ? 'Simple layout: ' : '') + (d.note || '');
     const row = (f) => `<div class="trow"><b data-id="${f.id}">${esc(f.cs)}</b><small>${esc(f.type)} \u00b7 ${esc((GND_TXT[f.st] || (() => f.st))(f))}</small>` +
       (GND_BTN[f.st] || []).map(([c, n]) => `<button data-id="${f.id}" data-c="${c}">${n}</button>`).join('') + '</div>';
-    const wait = d.flights.filter((f) => ['gate', 'pushed', 'hs_rwy', 'exit', 'held'].includes(f.st));
-    const move = d.flights.filter((f) => !['gate', 'pushed', 'hs_rwy', 'exit', 'held'].includes(f.st));
+    const wait = d.flights.filter((f) => ['clrd', 'gate', 'pushed', 'hs_rwy', 'exit', 'held'].includes(f.st));
+    const move = d.flights.filter((f) => !['clrd', 'gate', 'pushed', 'hs_rwy', 'exit', 'held'].includes(f.st));
     side.querySelector('.gndWait').innerHTML = wait.length ? wait.map(row).join('') : '<div class="trow empty">Nobody waiting</div>';
     side.querySelector('.gndMove').innerHTML = move.length ? move.map(row).join('') : '<div class="trow empty">Nothing moving</div>';
   });
@@ -1645,6 +1687,7 @@ const DIG = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eig
 const digits = (n) => n.split('').map((d) => DIG[+d]).join(' ');
 function speakable(text) {
   return text
+    .replace(/\b(1[1-3]\d)\.(\d{1,3})\b/g, (m, a, b) => digits(a) + ' decimal ' + digits(b.replace(/0+$/, '') || '0'))
     .replace(/\bFL\s?(\d{2,3})\b/g, (m, n) => 'flight level ' + digits(n))
     .replace(/\b(\d{1,2})([LRC])\b/g, (m, n, s) => digits(n) + ' ' + { L: 'left', R: 'right', C: 'center' }[s])
     .replace(/\b(\d{1,3}),?000\b/g, (m, n) => digits(n) + ' thousand')
@@ -1739,7 +1782,7 @@ fetch('/api/positions').then((r) => r.json()).then((d) => { positions = d.positi
 document.querySelectorAll('#positions button').forEach((b) => b.addEventListener('click', async () => {
   const p = b.dataset.p, on = !positions[p];
   try { const d = await post('/api/positions', { [p]: on }); positions = d.positions; paintPositions(); } catch (e) { return; }
-  addLocal(`${{ ground: 'Ground', tower: 'Tower', approach: 'Approach', center: 'Center' }[p]} is now ${on ? 'yours' : 'handled by an AI controller'}.`, 'event');
+  addLocal(`${{ delivery: 'Clearance Delivery', ground: 'Ground', tower: 'Tower', approach: 'Approach', center: 'Center' }[p]} is now ${on ? 'yours' : 'handled by an AI controller'}.`, 'event');
 }));
 
 // ---------- dialogs (Wi-Fi, power) ----------
@@ -1840,8 +1883,28 @@ $('ghCheck').onclick = async () => {
 loadGh();
 
 // ---------- Learn (help & training guide) ----------
-$('learnBtn').onclick = () => { $('learn').hidden = false; };
+$('learnBtn').onclick = (e) => {
+  if (e.shiftKey || views.length > 1) { const v = views.find((x) => x.kind === 'guide'); if (v) setFocus(v); else setPaneKind(focused ? focused.idx : 0, 'guide'); return; }
+  $('learn').hidden = false;
+};
+$('learnSplit').onclick = () => { $('learn').hidden = true; if (S.layout < 2) setLayout(2); setPaneKind(views.length - 1, 'guide'); };
 $('learnClose').onclick = () => { $('learn').hidden = true; };
+
+// ---------- weather (METAR) and ATIS ----------
+let WXD = null;
+async function pollWx() {
+  try {
+    WXD = await (await fetch('/api/weather')).json();
+    const w = WXD.wdir == null ? (WXD.wspd >= 3 ? 'VRB' : 'CALM') : String(WXD.wdir).padStart(3, '0') + '/' + WXD.wspd + (WXD.wgst ? 'G' + WXD.wgst : '');
+    $('wxChip').hidden = !WXD.icao;
+    $('wxChip').innerHTML = `<b>${esc(WXD.icao || '')}</b>${WXD.atis ? ` ATIS <b>${esc(WXD.atis)}</b>` : ''} \u00b7 ${esc(w)}${WXD.altimeter ? ' \u00b7 ' + esc(WXD.altimeter.replace('altimeter ', 'A').replace('QNH ', 'Q')) : ''}`;
+    $('wxChip').title = (WXD.raw || 'No live weather (offline) - wind calm assumed') + (WXD.best_runway ? `\nWind favours runway ${WXD.best_runway}` : '') +
+      (WXD.freqs ? '\n' + Object.entries(WXD.freqs).map(([k, v]) => `${k} ${v}`).join('  ') : '');
+    document.querySelectorAll('.twrWx').forEach((el) => { el.textContent = `${WXD.wind}${WXD.altimeter ? ', ' + WXD.altimeter : ''}${WXD.best_runway ? ' - favours runway ' + WXD.best_runway : ''}`; });
+  } catch (e) { /* ignore */ }
+  setTimeout(pollWx, 60000);
+}
+pollWx();
 
 // ---------- boot screen ----------
 const bootT0 = performance.now();

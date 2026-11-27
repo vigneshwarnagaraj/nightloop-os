@@ -24,7 +24,7 @@ ol li,ul li{margin:4px 0}.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:c
 <h4>START HERE</h4><a href="#intro">How to use this guide</a><a href="#big">ATC in one page</a><a href="#flight">Life of a flight</a>
 <h4>RADIO</h4><a href="#radio">Talking on the radio</a><a href="#alpha">Letters and numbers</a><a href="#units">Heights, headings, speeds</a>
 <h4>SAFETY</h4><a href="#sep">Separation rules</a><a href="#wake">Wake turbulence</a>
-<h4>POSITIONS</h4><a href="#ground">Ground</a><a href="#tower">Tower</a><a href="#approach">Approach</a><a href="#center">Center</a>
+<h4>POSITIONS</h4><a href="#delivery">Clearance Delivery</a><a href="#ground">Ground</a><a href="#tower">Tower</a><a href="#approach">Approach</a><a href="#center">Center</a>
 <h4>NIGHTLOOP</h4><a href="#cmds">Command reference</a><a href="#voice">Voice commands</a><a href="#screens">Screens and tools</a>
 <h4>PRACTICE</h4><a href="#lessons">Lessons 1-10</a><a href="#mistakes">Common mistakes</a><a href="#gloss">Glossary</a>
 </nav>
@@ -88,6 +88,21 @@ ol li,ul li{margin:4px 0}.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:c
 
 <h2 id="wake">Wake turbulence</h2>
 <p>Big aircraft leave strong whirlwinds behind them. A small plane behind a heavy one needs extra space: about 4-6 NM on final, or 2-3 minutes between departures on the same runway. NIGHTLOOP's AI Tower waits 75 s between departures and the AI Approach keeps about 5 NM between arrivals.</p>
+
+<h2 id="delivery">Clearance Delivery, squawk, frequencies and ATIS</h2>
+<p>Before an airliner moves, it needs its <b>IFR clearance</b>: permission to fly its filed route, with the first altitude, the departure frequency and a <b>squawk code</b> (a 4-digit transponder code that identifies it on radar; digits 0-7 only).</p>
+<p>The easy way to remember the parts is <b>C-R-A-F-T</b>: <b>C</b>learance limit (destination), <b>R</b>oute, <b>A</b>ltitude (initial, and the expected cruise level), <b>F</b>requency (departure), <b>T</b>ransponder (squawk).</p>
+<div class="say"><i>Pilot:</i> Clearance, JetBlue 4513, gate Mike Two Seven, IFR to Kennedy, information Bravo, request clearance.<br>
+<b>DEL:</b> JetBlue 4513, cleared to Kennedy airport as filed, climb and maintain five thousand, expect flight level three five zero one zero minutes after departure, departure frequency one two five decimal four, squawk four five two one.<br>
+<i>Pilot:</i> Cleared to Kennedy as filed, five thousand, expect flight level three five zero, one two five decimal four, squawk four five two one, JetBlue 4513.</div>
+<ul><li><b>ATIS</b> is a recorded weather and runway broadcast. Each new version gets a letter (Alpha, Bravo...). Pilots say "information Bravo" to show they have it. NIGHTLOOP builds the ATIS from the real weather report (METAR) of your airport - see the weather box at the top (wind, altimeter); hover it for the frequencies.</li>
+<li><b>Frequencies</b> are the real ones of the airport where known (Clearance, Ground, Tower, Departure, Approach), e.g. "contact Tower one one eight decimal three".</li>
+<li><b>Altimeter</b> (USA, inches: "altimeter two niner niner two") or <b>QNH</b> (elsewhere, hectopascals: "QNH one zero one three") lets pilots set the correct height.</li></ul>
+<h3>In NIGHTLOOP</h3>
+<p>Switch on <b>DEL</b> under "You work". Departures call "request clearance" from the gate (Ground window list shows <b>Clearance</b>). Press it to give the standard clearance, or on the plane card fill in initial altitude, cruise level and squawk. Typed: <code>CLR</code> or <code>CLR A050 FL350 SQ4521</code>. After the clearance the pilot calls Ground. When DEL is AI, the AI gives the clearance and you hear it in the Ground window.</p>
+<h3>The full takeoff clearance</h3>
+<div class="say"><b>TWR:</b> JetBlue 4513, wind two seven zero at one zero, runway two eight right, cleared for takeoff.<br><i>Pilot:</i> Cleared for takeoff two eight right, JetBlue 4513.<br><b>TWR:</b> JetBlue 4513, contact Chicago Departure one two five decimal four, good day.</div>
+<p>In NIGHTLOOP the wind is added automatically from the live weather. After takeoff give <code>HO</code> to send the plane to Departure (Tower's handoff); if you forget, it switches by itself after a minute.</p>
 
 <h2 id="ground">Ground control</h2>
 <p>Ground controls everything moving on the taxiways and aprons. Ground never lets a plane onto a runway: crossing a runway needs a clear "cross runway ..." instruction (from Tower in the real world).</p>
@@ -154,6 +169,8 @@ ol li,ul li{margin:4px 0}.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:c
 <h2 id="screens">Screens and tools</h2>
 <ul><li><b>Left bar:</b> World, Center, Approach, Ground, Tower windows; this guide (book icon).</li>
 <li><b>Windows 1-4:</b> split the screen; each window's header menu chooses its task; the square button opens a window on its own (second monitor).</li>
+<li><b>Learn window:</b> this guide can sit next to the radar - book icon then "Open next to the radar", or choose LEARN ATC in any window's menu.</li>
+<li><b>Hearing other positions:</b> when you work GND/TWR and open the APP or CTR window, you hear the AI controllers of those positions (Settings &gt; Voice).</li>
 <li><b>Data blocks:</b> callsign, then flight level (e.g. 350 = FL350), climb/descent arrow, speed/10, aircraft type; a third line shows your last instruction.</li>
 <li><b>Colours:</b> green AI (controllable), cyan VATSIM, amber IVAO, magenta real-world ADS-B (watch only; use <b>Shadow</b> to make a controllable copy).</li>
 <li><b>Settings &gt; Updates &gt; Update all data</b> downloads airports, maps and traffic again.</li></ul>
